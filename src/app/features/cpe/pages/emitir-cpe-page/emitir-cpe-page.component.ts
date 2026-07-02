@@ -1,61 +1,68 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormArray, NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { CpeApiService } from '../../data-access/cpe-api.service';
 import { CpeHealthResponse } from '../../models/cpe-health-response.model';
-import { ModulePlaceholderComponent } from '../../../../shared/ui/module-placeholder/module-placeholder.component';
 
 type ConexionCpeEstado = 'comprobando' | 'conectado' | 'error';
 
 @Component({
   selector: 'app-emitir-cpe-page',
-  imports: [ModulePlaceholderComponent],
-  template: `
-    <app-module-placeholder
-      title="Emitir CPE"
-      description="Pantalla base para la futura emisión de comprobantes electrónicos."
-    />
-
-    <section aria-labelledby="conexion-cpe-title">
-      <h2 id="conexion-cpe-title">Conexión con API CPE</h2>
-
-      @if (estadoConexion() === 'comprobando') {
-        <p>comprobando</p>
-      }
-
-      @if (estadoConexion() === 'conectado') {
-        <p>conectado</p>
-
-        @if (health(); as api) {
-          <dl>
-            <dt>Servicio</dt>
-            <dd>{{ api.service }}</dd>
-            <dt>Versión</dt>
-            <dd>{{ api.version }}</dd>
-            <dt>Modo</dt>
-            <dd>{{ api.modo }}</dd>
-            <dt>Servidor</dt>
-            <dd>{{ api.fechaServidor }}</dd>
-          </dl>
-        }
-      }
-
-      @if (estadoConexion() === 'error') {
-        <p>error</p>
-        <p>{{ mensajeError() }}</p>
-      }
-    </section>
-  `,
+  imports: [ReactiveFormsModule],
+  templateUrl: './emitir-cpe-page.component.html',
+  styleUrl: './emitir-cpe-page.component.scss',
 })
 export class EmitirCpePageComponent implements OnInit {
   protected readonly estadoConexion = signal<ConexionCpeEstado>('comprobando');
   protected readonly health = signal<CpeHealthResponse | null>(null);
   protected readonly mensajeError = signal('');
+  private readonly formBuilder = inject(NonNullableFormBuilder);
+  protected readonly emitirForm = this.formBuilder.group({
+    comprobante: this.formBuilder.group({
+      tipoComprobante: ['03', Validators.required],
+      serie: ['B001', [Validators.required, Validators.pattern(/^[FB][A-Z0-9]{3}$/)]],
+      correlativo: [1, [Validators.required, Validators.min(1)]],
+      fechaEmision: [this.obtenerFechaActual(), Validators.required],
+      moneda: ['PEN', Validators.required],
+      tipoOperacion: ['0101', [Validators.required, Validators.minLength(4), Validators.maxLength(4)]],
+      formaPago: ['CONTADO', Validators.required],
+      observacion: [''],
+    }),
+    cliente: this.formBuilder.group({
+      tipoDocumento: ['1', Validators.required],
+      numeroDocumento: ['', [Validators.required, Validators.pattern(/^\d{8,11}$/)]],
+      razonSocial: ['', Validators.required],
+    }),
+    items: this.formBuilder.array([
+      this.crearItemForm()
+    ])
+  });
 
   private readonly cpeApiService = inject(CpeApiService);
 
+  protected get items(): FormArray {
+    return this.emitirForm.controls.items;
+  }
+
   ngOnInit(): void {
     this.verificarConexion();
+  }
+
+  protected agregarItem(): void {
+    this.items.push(this.crearItemForm());
+  }
+
+  protected eliminarItem(index: number): void {
+    if (this.items.length === 1) {
+      return;
+    }
+
+    this.items.removeAt(index);
+  }
+
+  protected marcarFormulario(): void {
+    this.emitirForm.markAllAsTouched();
   }
 
   private verificarConexion(): void {
@@ -93,5 +100,20 @@ export class EmitirCpePageComponent implements OnInit {
     }
 
     return 'Ocurrió un error inesperado al comprobar la conexión.';
+  }
+
+  private crearItemForm() {
+    return this.formBuilder.group({
+      codigo: [''],
+      descripcion: ['', Validators.required],
+      unidadMedida: ['NIU', Validators.required],
+      cantidad: [1, [Validators.required, Validators.min(0.01)]],
+      valorUnitario: [0, [Validators.required, Validators.min(0)]],
+      codigoAfectacionIgv: ['10', Validators.required],
+    });
+  }
+
+  private obtenerFechaActual(): string {
+    return new Date().toISOString().slice(0, 10);
   }
 }

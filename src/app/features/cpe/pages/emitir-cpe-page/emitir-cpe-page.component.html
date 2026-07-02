@@ -1,0 +1,194 @@
+<section class="emitir-cpe">
+  <header class="page-header">
+    <div>
+      <h1>Emitir CPE</h1>
+      <p>Primera versión del formulario de emisión. Todavía no envía comprobantes al backend.</p>
+    </div>
+  </header>
+
+  <section class="connection-panel" aria-labelledby="conexion-cpe-title">
+    <h2 id="conexion-cpe-title">Conexión con API CPE</h2>
+
+    @if (estadoConexion() === 'comprobando') {
+      <p class="status status--checking">comprobando</p>
+    }
+
+    @if (estadoConexion() === 'conectado') {
+      <p class="status status--success">conectado</p>
+
+      @if (health(); as api) {
+        <dl class="health-details">
+          <div>
+            <dt>Servicio</dt>
+            <dd>{{ api.service }}</dd>
+          </div>
+          <div>
+            <dt>Versión</dt>
+            <dd>{{ api.version }}</dd>
+          </div>
+          <div>
+            <dt>Modo</dt>
+            <dd>{{ api.modo }}</dd>
+          </div>
+          <div>
+            <dt>Servidor</dt>
+            <dd>{{ api.fechaServidor }}</dd>
+          </div>
+        </dl>
+      }
+    }
+
+    @if (estadoConexion() === 'error') {
+      <p class="status status--error">error</p>
+      <p class="error-message">{{ mensajeError() }}</p>
+    }
+  </section>
+
+  <form class="cpe-form" [formGroup]="emitirForm" (ngSubmit)="marcarFormulario()">
+    <section class="form-section" formGroupName="comprobante" aria-labelledby="datos-comprobante-title">
+      <h2 id="datos-comprobante-title">Datos del comprobante</h2>
+
+      <div class="form-grid">
+        <label>
+          Tipo
+          <select formControlName="tipoComprobante">
+            <option value="03">Boleta</option>
+            <option value="01">Factura</option>
+          </select>
+        </label>
+
+        <label>
+          Serie
+          <input type="text" formControlName="serie" maxlength="4" placeholder="B001" />
+        </label>
+
+        <label>
+          Correlativo
+          <input type="number" formControlName="correlativo" min="1" />
+        </label>
+
+        <label>
+          Fecha de emisión
+          <input type="date" formControlName="fechaEmision" />
+        </label>
+
+        <label>
+          Moneda
+          <select formControlName="moneda">
+            <option value="PEN">PEN</option>
+            <option value="USD">USD</option>
+          </select>
+        </label>
+
+        <label>
+          Tipo de operación
+          <input type="text" formControlName="tipoOperacion" maxlength="4" />
+        </label>
+
+        <label>
+          Forma de pago
+          <select formControlName="formaPago">
+            <option value="CONTADO">Contado</option>
+            <option value="CREDITO">Crédito</option>
+          </select>
+        </label>
+
+        <label class="field-wide">
+          Observación
+          <textarea formControlName="observacion" rows="3"></textarea>
+        </label>
+      </div>
+    </section>
+
+    <section class="form-section" formGroupName="cliente" aria-labelledby="datos-cliente-title">
+      <h2 id="datos-cliente-title">Datos del cliente</h2>
+
+      <div class="form-grid">
+        <label>
+          Tipo de documento
+          <select formControlName="tipoDocumento">
+            <option value="1">DNI</option>
+            <option value="6">RUC</option>
+          </select>
+        </label>
+
+        <label>
+          Número de documento
+          <input type="text" formControlName="numeroDocumento" inputmode="numeric" />
+        </label>
+
+        <label class="field-wide">
+          Razón social o nombre
+          <input type="text" formControlName="razonSocial" />
+        </label>
+      </div>
+    </section>
+
+    <section class="form-section" formArrayName="items" aria-labelledby="items-title">
+      <div class="section-header">
+        <h2 id="items-title">Ítems</h2>
+        <button type="button" class="secondary-button" (click)="agregarItem()">Agregar ítem</button>
+      </div>
+
+      @for (item of items.controls; track $index) {
+        <fieldset class="item-row" [formGroupName]="$index">
+          <legend>Ítem {{ $index + 1 }}</legend>
+
+          <div class="form-grid">
+            <label>
+              Código
+              <input type="text" formControlName="codigo" />
+            </label>
+
+            <label class="field-wide">
+              Descripción
+              <input type="text" formControlName="descripcion" />
+            </label>
+
+            <label>
+              Unidad
+              <input type="text" formControlName="unidadMedida" />
+            </label>
+
+            <label>
+              Cantidad
+              <input type="number" formControlName="cantidad" min="0.01" step="0.01" />
+            </label>
+
+            <label>
+              Valor unitario
+              <input type="number" formControlName="valorUnitario" min="0" step="0.01" />
+            </label>
+
+            <label>
+              Afectación IGV
+              <select formControlName="codigoAfectacionIgv">
+                <option value="10">Gravado</option>
+                <option value="20">Exonerado</option>
+                <option value="30">Inafecto</option>
+              </select>
+            </label>
+          </div>
+
+          <button type="button" class="danger-button" (click)="eliminarItem($index)" [disabled]="items.length === 1">
+            Eliminar ítem
+          </button>
+        </fieldset>
+      }
+    </section>
+
+    <section class="form-section summary-panel" aria-labelledby="validacion-title">
+      <h2 id="validacion-title">Resumen y validación</h2>
+
+      @if (emitirForm.valid) {
+        <p class="status status--success">Formulario válido</p>
+      } @else {
+        <p class="status status--checking">Formulario incompleto</p>
+      }
+
+      <p>Ítems registrados: {{ items.length }}</p>
+
+      <button type="submit" class="primary-button">Validar formulario</button>
+    </section>
+  </form>
+</section>

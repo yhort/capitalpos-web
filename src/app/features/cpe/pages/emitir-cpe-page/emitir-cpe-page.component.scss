@@ -1,0 +1,164 @@
+.emitir-cpe {
+  display: grid;
+  gap: 1rem;
+}
+
+.page-header h1,
+.form-section h2,
+.connection-panel h2 {
+  margin: 0;
+}
+
+.page-header p {
+  margin: 0.35rem 0 0;
+  color: #475569;
+}
+
+.connection-panel,
+.form-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.connection-panel,
+.cpe-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.health-details {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 1rem 0 0;
+}
+
+.health-details dt {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.health-details dd {
+  margin: 0.2rem 0 0;
+  font-weight: 600;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 1rem;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+label {
+  color: #334155;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #0f172a;
+  font: inherit;
+  padding: 0.65rem 0.75rem;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.section-header {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.item-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin: 1rem 0 0;
+  padding: 1rem;
+}
+
+.item-row legend {
+  color: #0f172a;
+  font-weight: 700;
+  padding: 0 0.4rem;
+}
+
+.status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-weight: 700;
+  margin: 0.75rem 0 0;
+  padding: 0.3rem 0.7rem;
+}
+
+.status--checking {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status--success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status--error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.error-message {
+  color: #991b1b;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button {
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.65rem 0.9rem;
+}
+
+.primary-button {
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
+.secondary-button {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.danger-button {
+  background: #fee2e2;
+  color: #991b1b;
+  margin-top: 1rem;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.summary-panel {
+  align-items: start;
+  display: grid;
+  gap: 0.75rem;
+}
