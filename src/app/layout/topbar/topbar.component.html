@@ -1,0 +1,30 @@
+<header class="topbar">
+    <div class="topbar__left">
+        <button type="button" class="topbar__menu-button" aria-label="Abrir o cerrar menú principal"
+            (click)="onMenuToggle()">
+            Menú
+        </button>
+
+        <div class="topbar__page">
+            <span class="topbar__system-name">CapitalPOS</span>
+            <h1 class="topbar__title">{{ pageTitle() }}</h1>
+        </div>
+    </div>
+
+    <div class="topbar__right">
+        <button type="button" class="topbar__notification-button" aria-label="Ver notificaciones">
+            Notificaciones
+
+            @if (notificationCount() > 0) {
+            <span class="topbar__notification-count">
+                {{ notificationCount() }}
+            </span>
+            }
+        </button>
+
+        <div class="topbar__user">
+            <span class="topbar__user-label">Usuario</span>
+            <strong class="topbar__user-name">{{ userName() }}</strong>
+        </div>
+    </div>
+</header>
