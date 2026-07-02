@@ -1,0 +1,15 @@
+<aside class="sidebar" aria-label="Navegación principal">
+    <div class="sidebar__brand">
+        <span class="sidebar__brand-name">CapitalPOS</span>
+        <span class="sidebar__brand-description">Sistema comercial</span>
+    </div>
+
+    <nav class="sidebar__navigation">
+        @for (item of menuItems; track item.route) {
+        <a class="sidebar__link" [routerLink]="item.route" routerLinkActive="sidebar__link--active"
+            [routerLinkActiveOptions]="{ exact: item.exact }" ariaCurrentWhenActive="page">
+            <span>{{ item.label }}</span>
+        </a>
+        }
+    </nav>
+</aside>
