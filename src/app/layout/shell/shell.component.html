@@ -6,11 +6,11 @@
         (click)="closeMobileSidebar()"></button>
 
     <div class="app-shell__workspace">
-        <app-topbar pageTitle="Dashboard" userName="Usuario" [notificationCount]="0" [menuExpanded]="menuExpanded()"
+        <app-topbar [pageTitle]="pageTitle()" userName="Usuario" [notificationCount]="0" [menuExpanded]="menuExpanded()"
             menuControls="main-sidebar" (menuToggle)="toggleSidebar()" />
 
         <main class="app-shell__content">
-            <app-breadcrumb [items]="breadcrumbItems" />
+            <app-breadcrumb [items]="breadcrumbItems()" />
 
             <router-outlet />
         </main>

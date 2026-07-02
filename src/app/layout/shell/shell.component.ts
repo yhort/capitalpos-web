@@ -8,7 +8,12 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import {
+  ActivatedRoute,
+  NavigationEnd,
+  Router,
+  RouterOutlet,
+} from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 
@@ -34,24 +39,30 @@ export class ShellComponent {
   private readonly document = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
+  private readonly activatedRoute = inject(ActivatedRoute);
   private readonly mobileMediaQuery = window.matchMedia('(max-width: 768px)');
   private previousBodyOverflow: string | null = null;
 
-  readonly sidebarCollapsed = signal(false);
-  readonly mobileSidebarOpen = signal(false);
-  readonly isMobileViewport = signal(this.mobileMediaQuery.matches);
-  readonly menuExpanded = computed(() =>
-    this.isMobileViewport()
-      ? this.mobileSidebarOpen()
-      : !this.sidebarCollapsed(),
-  );
-
-  readonly breadcrumbItems: readonly BreadcrumbItem[] = [
+  private readonly fallbackPageTitle = 'Dashboard';
+  private readonly fallbackBreadcrumbItems: readonly BreadcrumbItem[] = [
     {
       label: 'Dashboard',
       route: '/app/dashboard',
     },
   ];
+
+  readonly sidebarCollapsed = signal(false);
+  readonly mobileSidebarOpen = signal(false);
+  readonly isMobileViewport = signal(this.mobileMediaQuery.matches);
+  readonly pageTitle = signal(this.fallbackPageTitle);
+  readonly breadcrumbItems = signal<readonly BreadcrumbItem[]>(
+    this.fallbackBreadcrumbItems,
+  );
+  readonly menuExpanded = computed(() =>
+    this.isMobileViewport()
+      ? this.mobileSidebarOpen()
+      : !this.sidebarCollapsed(),
+  );
 
   constructor() {
     const updateMobileViewport = (event?: MediaQueryListEvent): void => {
@@ -80,12 +91,17 @@ export class ShellComponent {
       this.unlockBodyScroll();
     });
 
+    this.updateRouteMetadata();
+
     this.router.events
       .pipe(
         filter((event): event is NavigationEnd => event instanceof NavigationEnd),
         takeUntilDestroyed(this.destroyRef),
       )
-      .subscribe(() => this.closeMobileSidebar());
+      .subscribe(() => {
+        this.closeMobileSidebar();
+        this.updateRouteMetadata();
+      });
   }
 
   toggleSidebar(): void {
@@ -122,5 +138,45 @@ export class ShellComponent {
 
     this.document.body.style.overflow = this.previousBodyOverflow;
     this.previousBodyOverflow = null;
+  }
+
+  private updateRouteMetadata(): void {
+    const activeRoute = this.getDeepestActiveRoute();
+    const routeData = activeRoute?.snapshot?.data ?? {};
+    const pageTitle = routeData['pageTitle'];
+    const breadcrumb = routeData['breadcrumb'];
+
+    this.pageTitle.set(
+      typeof pageTitle === 'string' ? pageTitle : this.fallbackPageTitle,
+    );
+    this.breadcrumbItems.set(
+      this.isBreadcrumbItems(breadcrumb)
+        ? breadcrumb
+        : this.fallbackBreadcrumbItems,
+    );
+  }
+
+  private getDeepestActiveRoute(): ActivatedRoute | null {
+    let activeRoute: ActivatedRoute | null = this.activatedRoute;
+
+    while (activeRoute?.firstChild) {
+      activeRoute = activeRoute.firstChild;
+    }
+
+    return activeRoute;
+  }
+
+  private isBreadcrumbItems(value: unknown): value is readonly BreadcrumbItem[] {
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (item) =>
+          typeof item === 'object' &&
+          item !== null &&
+          'label' in item &&
+          typeof item.label === 'string' &&
+          (!('route' in item) || typeof item.route === 'string'),
+      )
+    );
   }
 }
