@@ -89,7 +89,6 @@
           Forma de pago
           <select formControlName="formaPago">
             <option value="CONTADO">Contado</option>
-            <option value="CREDITO">Crédito</option>
           </select>
         </label>
 
@@ -216,6 +215,22 @@
         <p class="status status--checking">Formulario incompleto</p>
       }
 
+      @if (emitirForm.hasError('serieFactura')) {
+        <p class="error-message">Para factura, la serie debe comenzar con F.</p>
+      }
+
+      @if (emitirForm.hasError('serieBoleta')) {
+        <p class="error-message">Para boleta, la serie debe comenzar con B.</p>
+      }
+
+      @if (emitirForm.hasError('facturaRequiereRuc')) {
+        <p class="error-message">La factura requiere cliente con RUC de 11 dígitos.</p>
+      }
+
+      @if (emitirForm.hasError('boletaDocumentoInvalido')) {
+        <p class="error-message">La boleta requiere DNI de 8 dígitos o RUC de 11 dígitos.</p>
+      }
+
       <p>Ítems registrados: {{ items.length }}</p>
 
       <div class="table-wrapper">
@@ -247,6 +262,16 @@
       </div>
 
       <button type="submit" class="primary-button">Validar formulario</button>
+      <button type="button" class="secondary-button" (click)="generarVistaPrevia()" [disabled]="emitirForm.invalid">
+        Generar vista previa
+      </button>
+
+      @if (requestPreview(); as preview) {
+        <div class="preview-panel">
+          <h3>Vista previa de EmitirCpeRequest</h3>
+          <pre>{{ preview }}</pre>
+        </div>
+      }
     </section>
   </form>
 </section>

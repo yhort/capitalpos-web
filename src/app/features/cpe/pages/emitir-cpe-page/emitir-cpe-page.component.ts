@@ -1,10 +1,11 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, NonNullableFormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 
 import { CpeApiService } from '../../data-access/cpe-api.service';
 import { CpeHealthResponse } from '../../models/cpe-health-response.model';
+import { EmitirCpeRequest, EmisorCpe, ItemCpe } from '../../models/emitir-cpe-request.model';
 
 type ConexionCpeEstado = 'comprobando' | 'conectado' | 'error';
 type CodigoAfectacionIgv = '10' | '20' | '30';
@@ -17,6 +18,19 @@ interface TotalesCpeCalculados {
   readonly total: number;
 }
 
+interface ItemCpeFormValue {
+  readonly codigo: string;
+  readonly descripcion: string;
+  readonly unidadMedida: string;
+  readonly cantidad: number;
+  readonly valorUnitario: number;
+  readonly codigoAfectacionIgv: CodigoAfectacionIgv;
+  readonly precioUnitario: number;
+  readonly subtotal: number;
+  readonly igv: number;
+  readonly total: number;
+}
+
 const IGV_GRAVADO = 0.18;
 const TOTALES_INICIALES: TotalesCpeCalculados = {
   totalGravada: 0,
@@ -24,6 +38,16 @@ const TOTALES_INICIALES: TotalesCpeCalculados = {
   totalInafecta: 0,
   totalIgv: 0,
   total: 0,
+};
+const EMISOR_PREVIEW: EmisorCpe = {
+  ruc: '00000000000',
+  razonSocial: 'EMISOR TEMPORAL DE VISTA PREVIA',
+  nombreComercial: 'EMISOR PREVIEW',
+  ubigeo: '000000',
+  direccion: 'DIRECCION TEMPORAL',
+  departamento: 'DEPARTAMENTO TEMPORAL',
+  provincia: 'PROVINCIA TEMPORAL',
+  distrito: 'DISTRITO TEMPORAL',
 };
 
 @Component({
@@ -37,6 +61,7 @@ export class EmitirCpePageComponent implements OnInit {
   protected readonly health = signal<CpeHealthResponse | null>(null);
   protected readonly mensajeError = signal('');
   protected readonly totales = signal<TotalesCpeCalculados>(TOTALES_INICIALES);
+  protected readonly requestPreview = signal<string | null>(null);
   private readonly formBuilder = inject(NonNullableFormBuilder);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly emitirForm = this.formBuilder.group({
@@ -58,6 +83,8 @@ export class EmitirCpePageComponent implements OnInit {
     items: this.formBuilder.array([
       this.crearItemForm()
     ])
+  }, {
+    validators: this.validarFormularioCpe
   });
 
   private readonly cpeApiService = inject(CpeApiService);
@@ -70,7 +97,10 @@ export class EmitirCpePageComponent implements OnInit {
     this.verificarConexion();
     this.emitirForm.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.recalcularImportes());
+      .subscribe(() => {
+        this.recalcularImportes();
+        this.requestPreview.set(null);
+      });
     this.recalcularImportes();
   }
 
@@ -90,6 +120,18 @@ export class EmitirCpePageComponent implements OnInit {
 
   protected marcarFormulario(): void {
     this.emitirForm.markAllAsTouched();
+  }
+
+  protected generarVistaPrevia(): void {
+    this.emitirForm.markAllAsTouched();
+
+    if (this.emitirForm.invalid) {
+      this.requestPreview.set(null);
+      return;
+    }
+
+    const request = this.construirEmitirCpeRequest();
+    this.requestPreview.set(JSON.stringify(request, null, 2));
   }
 
   private verificarConexion(): void {
@@ -144,6 +186,54 @@ export class EmitirCpePageComponent implements OnInit {
     });
   }
 
+  private construirEmitirCpeRequest(): EmitirCpeRequest {
+    const comprobante = this.emitirForm.controls.comprobante.getRawValue();
+    const cliente = this.emitirForm.controls.cliente.getRawValue();
+    const totales = this.totales();
+
+    return {
+      rucEmisor: EMISOR_PREVIEW.ruc,
+      emisor: EMISOR_PREVIEW,
+      tipoComprobante: comprobante.tipoComprobante,
+      serie: comprobante.serie.toUpperCase(),
+      correlativo: comprobante.correlativo,
+      fechaEmision: new Date(`${comprobante.fechaEmision}T00:00:00`).toISOString(),
+      moneda: comprobante.moneda,
+      tipoOperacion: comprobante.tipoOperacion,
+      observacion: comprobante.observacion.trim() || null,
+      formaPago: 'CONTADO',
+      montoPendientePago: 0,
+      cuotas: [],
+      cliente: {
+        tipoDocumento: cliente.tipoDocumento,
+        numeroDocumento: cliente.numeroDocumento,
+        razonSocial: cliente.razonSocial,
+      },
+      items: this.items.controls.map((item) => this.mapearItem(item.getRawValue())),
+      totalGravada: totales.totalGravada,
+      totalExonerada: totales.totalExonerada,
+      totalInafecta: totales.totalInafecta,
+      totalIgv: totales.totalIgv,
+      total: totales.total,
+      montoEnLetras: '',
+    };
+  }
+
+  private mapearItem(item: ItemCpeFormValue): ItemCpe {
+    return {
+      codigo: item.codigo,
+      descripcion: item.descripcion,
+      unidadMedida: item.unidadMedida,
+      cantidad: item.cantidad,
+      valorUnitario: item.valorUnitario,
+      precioUnitario: item.precioUnitario,
+      subtotal: item.subtotal,
+      igv: item.igv,
+      total: item.total,
+      codigoAfectacionIgv: item.codigoAfectacionIgv,
+    };
+  }
+
   private recalcularImportes(): void {
     const nuevosTotales = { ...TOTALES_INICIALES };
 
@@ -188,6 +278,38 @@ export class EmitirCpePageComponent implements OnInit {
 
   private redondear(valor: number): number {
     return Math.round((valor + Number.EPSILON) * 100) / 100;
+  }
+
+  private validarFormularioCpe(control: AbstractControl): ValidationErrors | null {
+    const tipoComprobante = control.get('comprobante.tipoComprobante')?.value;
+    const serie = String(control.get('comprobante.serie')?.value ?? '').toUpperCase();
+    const tipoDocumento = control.get('cliente.tipoDocumento')?.value;
+    const numeroDocumento = String(control.get('cliente.numeroDocumento')?.value ?? '');
+    const errores: ValidationErrors = {};
+
+    if (tipoComprobante === '01' && !serie.startsWith('F')) {
+      errores['serieFactura'] = true;
+    }
+
+    if (tipoComprobante === '03' && !serie.startsWith('B')) {
+      errores['serieBoleta'] = true;
+    }
+
+    if (tipoComprobante === '01') {
+      if (tipoDocumento !== '6' || !/^\d{11}$/.test(numeroDocumento)) {
+        errores['facturaRequiereRuc'] = true;
+      }
+    }
+
+    if (tipoComprobante === '03') {
+      const dniValido = tipoDocumento === '1' && /^\d{8}$/.test(numeroDocumento);
+      const rucValido = tipoDocumento === '6' && /^\d{11}$/.test(numeroDocumento);
+      if (!dniValido && !rucValido) {
+        errores['boletaDocumentoInvalido'] = true;
+      }
+    }
+
+    return Object.keys(errores).length > 0 ? errores : null;
   }
 
   private obtenerFechaActual(): string {
