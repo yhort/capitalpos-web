@@ -1,5 +1,13 @@
-<div class="app-shell">
-  <main class="app-shell__content">
-    <router-outlet />
-  </main>
+<div class="app-shell" [class.app-shell--sidebar-collapsed]="sidebarCollapsed()">
+    <app-sidebar />
+
+    <div class="app-shell__workspace">
+        <app-topbar pageTitle="Dashboard" userName="Usuario" [notificationCount]="0" (menuToggle)="toggleSidebar()" />
+
+        <main class="app-shell__content">
+            <app-breadcrumb [items]="breadcrumbItems" />
+
+            <router-outlet />
+        </main>
+    </div>
 </div>
