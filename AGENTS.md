@@ -82,3 +82,15 @@ git status
 git diff --stat
 
 Los commits deben tener mensajes claros en español.
+
+## Entorno Node
+
+Antes de ejecutar comandos npm:
+
+1. Ejecutar:
+   source ~/.nvm/nvm.sh
+   nvm use
+
+2. Confirmar que node -v muestre la versión definida en .nvmrc.
+
+3. Para este proyecto debe utilizarse Node v24.15.0.
