@@ -21,6 +21,7 @@ import { TopbarComponent } from '../topbar/topbar.component';
 })
 export class ShellComponent {
   readonly sidebarCollapsed = signal(false);
+  readonly mobileSidebarOpen = signal(false);
 
   readonly breadcrumbItems: readonly BreadcrumbItem[] = [
     {
@@ -30,6 +31,15 @@ export class ShellComponent {
   ];
 
   toggleSidebar(): void {
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      this.mobileSidebarOpen.update((open) => !open);
+      return;
+    }
+
     this.sidebarCollapsed.update((collapsed) => !collapsed);
+  }
+
+  closeMobileSidebar(): void {
+    this.mobileSidebarOpen.set(false);
   }
 }
