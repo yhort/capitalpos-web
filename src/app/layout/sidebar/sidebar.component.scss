@@ -123,28 +123,3 @@
         }
     }
 }
-
-@media (max-width: 1024px) {
-    .sidebar {
-        padding-inline: var(--spacing-sm);
-
-        &__brand {
-            align-items: center;
-            padding-inline: 0;
-        }
-
-        &__brand-description {
-            display: none;
-        }
-
-        &__link {
-            justify-content: center;
-            padding-inline: var(--spacing-sm);
-
-            span {
-                width: 1ch;
-                text-overflow: clip;
-            }
-        }
-    }
-}
