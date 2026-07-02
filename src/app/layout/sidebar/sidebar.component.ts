@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, output } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 
 interface SidebarMenuItem {
@@ -14,6 +14,8 @@ interface SidebarMenuItem {
   styleUrl: './sidebar.component.scss',
 })
 export class SidebarComponent {
+  readonly routeSelected = output<void>();
+
   readonly menuItems: readonly SidebarMenuItem[] = [
     {
       label: 'Dashboard',
@@ -61,4 +63,8 @@ export class SidebarComponent {
       exact: false,
     },
   ];
+
+  onRouteSelected(): void {
+    this.routeSelected.emit();
+  }
 }

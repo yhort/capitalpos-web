@@ -7,7 +7,8 @@
     <nav class="sidebar__navigation">
         @for (item of menuItems; track item.route) {
         <a class="sidebar__link" [routerLink]="item.route" routerLinkActive="sidebar__link--active"
-            [routerLinkActiveOptions]="{ exact: item.exact }" ariaCurrentWhenActive="page">
+            [routerLinkActiveOptions]="{ exact: item.exact }" ariaCurrentWhenActive="page"
+            (click)="onRouteSelected()">
             <span>{{ item.label }}</span>
         </a>
         }

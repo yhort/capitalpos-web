@@ -1,9 +1,13 @@
-<div class="app-shell" [class.app-shell--sidebar-collapsed]="sidebarCollapsed()"
-    [class.app-shell--mobile-sidebar-open]="mobileSidebarOpen()">
-    <app-sidebar id="main-sidebar" />
+<div class="app-shell" [class.app-shell--sidebar-collapsed]="!isMobileViewport() && sidebarCollapsed()"
+    [class.app-shell--mobile-sidebar-open]="isMobileViewport() && mobileSidebarOpen()">
+    <app-sidebar id="main-sidebar" (routeSelected)="closeMobileSidebar()" />
+
+    <button type="button" class="app-shell__overlay" aria-label="Cerrar menú principal"
+        (click)="closeMobileSidebar()"></button>
 
     <div class="app-shell__workspace">
-        <app-topbar pageTitle="Dashboard" userName="Usuario" [notificationCount]="0" (menuToggle)="toggleSidebar()" />
+        <app-topbar pageTitle="Dashboard" userName="Usuario" [notificationCount]="0" [menuExpanded]="menuExpanded()"
+            menuControls="main-sidebar" (menuToggle)="toggleSidebar()" />
 
         <main class="app-shell__content">
             <app-breadcrumb [items]="breadcrumbItems" />

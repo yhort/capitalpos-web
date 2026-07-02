@@ -10,6 +10,8 @@ export class TopbarComponent {
   readonly pageTitle = input('Dashboard');
   readonly userName = input('Usuario');
   readonly notificationCount = input(0);
+  readonly menuExpanded = input(false);
+  readonly menuControls = input('main-sidebar');
 
   readonly menuToggle = output<void>();
 

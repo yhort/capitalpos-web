@@ -1,7 +1,7 @@
 <header class="topbar">
     <div class="topbar__left">
         <button type="button" class="topbar__menu-button" aria-label="Abrir o cerrar menú principal"
-            (click)="onMenuToggle()">
+            [attr.aria-expanded]="menuExpanded()" [attr.aria-controls]="menuControls()" (click)="onMenuToggle()">
             Menú
         </button>
 
