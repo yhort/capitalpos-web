@@ -257,6 +257,16 @@ Fase 2.3:
 
 Fase 2.4:
 
-* Validar ng serve.
+* Implementar interacción responsive del sidebar.
+* Mantener sidebar visible y colapsable en desktop y tablet.
+* Convertir sidebar en drawer lateral en mobile.
+* Agregar overlay para el drawer mobile.
+* Cerrar drawer al pulsar overlay.
+* Cerrar drawer con tecla Escape.
+* Cerrar drawer al seleccionar una ruta.
+* Cerrar drawer después de NavigationEnd.
+* Bloquear scroll de la página mientras el drawer esté abierto.
+* Mantener accesibilidad con aria-expanded y aria-controls.
+* Validar ng serve en desktop, tablet y mobile.
 * Validar npm run build.
-* Commit y push.
+* Fase cerrada.
