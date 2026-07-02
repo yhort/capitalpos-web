@@ -78,6 +78,11 @@ textarea {
   resize: vertical;
 }
 
+input[readonly] {
+  background: #f8fafc;
+  color: #334155;
+}
+
 .section-header {
   align-items: center;
   display: flex;
@@ -96,6 +101,47 @@ textarea {
   color: #0f172a;
   font-weight: 700;
   padding: 0 0.4rem;
+}
+
+.table-wrapper {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.amount-table {
+  border-collapse: collapse;
+  min-width: 560px;
+  width: 100%;
+}
+
+.amount-table caption {
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  text-align: left;
+}
+
+.amount-table th,
+.amount-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.65rem;
+  text-align: left;
+}
+
+.amount-table th {
+  color: #334155;
+  font-size: 0.85rem;
+}
+
+.amount-table td {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.amount-table input {
+  max-width: 140px;
+  width: 100%;
 }
 
 .status {

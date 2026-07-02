@@ -170,6 +170,36 @@
             </label>
           </div>
 
+          <div class="table-wrapper">
+            <table class="amount-table">
+              <caption>Importes calculados del ítem {{ $index + 1 }}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Subtotal</th>
+                  <th scope="col">IGV</th>
+                  <th scope="col">Total</th>
+                  <th scope="col">Precio unitario</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <input type="number" formControlName="subtotal" readonly />
+                  </td>
+                  <td>
+                    <input type="number" formControlName="igv" readonly />
+                  </td>
+                  <td>
+                    <input type="number" formControlName="total" readonly />
+                  </td>
+                  <td>
+                    <input type="number" formControlName="precioUnitario" readonly />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <button type="button" class="danger-button" (click)="eliminarItem($index)" [disabled]="items.length === 1">
             Eliminar ítem
           </button>
@@ -187,6 +217,34 @@
       }
 
       <p>Ítems registrados: {{ items.length }}</p>
+
+      <div class="table-wrapper">
+        <table class="amount-table">
+          <caption>Totales calculados del comprobante</caption>
+          <tbody>
+            <tr>
+              <th scope="row">Total gravada</th>
+              <td>{{ totales().totalGravada.toFixed(2) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Total exonerada</th>
+              <td>{{ totales().totalExonerada.toFixed(2) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Total inafecta</th>
+              <td>{{ totales().totalInafecta.toFixed(2) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Total IGV</th>
+              <td>{{ totales().totalIgv.toFixed(2) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Total</th>
+              <td>{{ totales().total.toFixed(2) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <button type="submit" class="primary-button">Validar formulario</button>
     </section>
