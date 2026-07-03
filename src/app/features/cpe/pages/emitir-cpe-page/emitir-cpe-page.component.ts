@@ -3,9 +3,10 @@ import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, NonNullableFormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 
+import { CPE_EMISOR_TEMPORAL_CONFIG } from '../../config/cpe-emisor.config';
 import { CpeApiService } from '../../data-access/cpe-api.service';
 import { CpeHealthResponse } from '../../models/cpe-health-response.model';
-import { EmitirCpeRequest, EmisorCpe, ItemCpe } from '../../models/emitir-cpe-request.model';
+import { EmitirCpeRequest, ItemCpe } from '../../models/emitir-cpe-request.model';
 
 type ConexionCpeEstado = 'comprobando' | 'conectado' | 'error';
 type CodigoAfectacionIgv = '10' | '20' | '30';
@@ -38,16 +39,6 @@ const TOTALES_INICIALES: TotalesCpeCalculados = {
   totalInafecta: 0,
   totalIgv: 0,
   total: 0,
-};
-const EMISOR_PREVIEW: EmisorCpe = {
-  ruc: '00000000000',
-  razonSocial: 'EMISOR TEMPORAL DE VISTA PREVIA',
-  nombreComercial: 'EMISOR PREVIEW',
-  ubigeo: '000000',
-  direccion: 'DIRECCION TEMPORAL',
-  departamento: 'DEPARTAMENTO TEMPORAL',
-  provincia: 'PROVINCIA TEMPORAL',
-  distrito: 'DISTRITO TEMPORAL',
 };
 
 @Component({
@@ -192,8 +183,8 @@ export class EmitirCpePageComponent implements OnInit {
     const totales = this.totales();
 
     return {
-      rucEmisor: EMISOR_PREVIEW.ruc,
-      emisor: EMISOR_PREVIEW,
+      rucEmisor: CPE_EMISOR_TEMPORAL_CONFIG.ruc,
+      emisor: CPE_EMISOR_TEMPORAL_CONFIG,
       tipoComprobante: comprobante.tipoComprobante,
       serie: comprobante.serie.toUpperCase(),
       correlativo: comprobante.correlativo,
