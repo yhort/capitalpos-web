@@ -6,32 +6,16 @@ import { AbstractControl, NonNullableFormBuilder, ReactiveFormsModule, Validatio
 import { CPE_EMISOR_TEMPORAL_CONFIG } from '../../config/cpe-emisor.config';
 import { CpeApiService } from '../../data-access/cpe-api.service';
 import { CpeHealthResponse } from '../../models/cpe-health-response.model';
-import { EmitirCpeRequest, ItemCpe } from '../../models/emitir-cpe-request.model';
+import {
+  CodigoAfectacionIgv,
+  TotalesCpeCalculados,
+  construirEmitirCpeRequest,
+  redondearImporteCpe,
+} from '../../utils/emitir-cpe-request.mapper';
+import { validarEmitirCpeRequest } from '../../utils/emitir-cpe-request.validator';
 
 type ConexionCpeEstado = 'comprobando' | 'conectado' | 'error';
-type CodigoAfectacionIgv = '10' | '20' | '30';
 type RequestValidacionEstado = 'sin-validar' | 'valido' | 'invalido';
-
-interface TotalesCpeCalculados {
-  readonly totalGravada: number;
-  readonly totalExonerada: number;
-  readonly totalInafecta: number;
-  readonly totalIgv: number;
-  readonly total: number;
-}
-
-interface ItemCpeFormValue {
-  readonly codigo: string;
-  readonly descripcion: string;
-  readonly unidadMedida: string;
-  readonly cantidad: number;
-  readonly valorUnitario: number;
-  readonly codigoAfectacionIgv: CodigoAfectacionIgv;
-  readonly precioUnitario: number;
-  readonly subtotal: number;
-  readonly igv: number;
-  readonly total: number;
-}
 
 const IGV_GRAVADO = 0.18;
 const TOTALES_INICIALES: TotalesCpeCalculados = {
@@ -124,8 +108,14 @@ export class EmitirCpePageComponent implements OnInit {
       return;
     }
 
-    const request = this.construirEmitirCpeRequest();
-    const errores = this.validarEmitirCpeRequest(request);
+    const request = construirEmitirCpeRequest({
+      comprobante: this.emitirForm.controls.comprobante.getRawValue(),
+      cliente: this.emitirForm.controls.cliente.getRawValue(),
+      items: this.items.controls.map((item) => item.getRawValue()),
+      totales: this.totales(),
+      emisor: CPE_EMISOR_TEMPORAL_CONFIG,
+    });
+    const errores = validarEmitirCpeRequest(request);
 
     this.requestValidacionErrores.set(errores);
     this.requestValidacionEstado.set(errores.length === 0 ? 'valido' : 'invalido');
@@ -184,128 +174,6 @@ export class EmitirCpePageComponent implements OnInit {
     });
   }
 
-  private construirEmitirCpeRequest(): EmitirCpeRequest {
-    const comprobante = this.emitirForm.controls.comprobante.getRawValue();
-    const cliente = this.emitirForm.controls.cliente.getRawValue();
-    const totales = this.totales();
-
-    return {
-      rucEmisor: CPE_EMISOR_TEMPORAL_CONFIG.ruc,
-      emisor: CPE_EMISOR_TEMPORAL_CONFIG,
-      tipoComprobante: comprobante.tipoComprobante,
-      serie: comprobante.serie.toUpperCase(),
-      correlativo: comprobante.correlativo,
-      fechaEmision: new Date(`${comprobante.fechaEmision}T00:00:00`).toISOString(),
-      moneda: comprobante.moneda,
-      tipoOperacion: comprobante.tipoOperacion,
-      observacion: comprobante.observacion.trim() || null,
-      formaPago: 'CONTADO',
-      montoPendientePago: 0,
-      cuotas: [],
-      cliente: {
-        tipoDocumento: cliente.tipoDocumento,
-        numeroDocumento: cliente.numeroDocumento,
-        razonSocial: cliente.razonSocial,
-      },
-      items: this.items.controls.map((item) => this.mapearItem(item.getRawValue())),
-      totalGravada: totales.totalGravada,
-      totalExonerada: totales.totalExonerada,
-      totalInafecta: totales.totalInafecta,
-      totalIgv: totales.totalIgv,
-      total: totales.total,
-      montoEnLetras: '',
-    };
-  }
-
-  private mapearItem(item: ItemCpeFormValue): ItemCpe {
-    return {
-      codigo: item.codigo,
-      descripcion: item.descripcion,
-      unidadMedida: item.unidadMedida,
-      cantidad: item.cantidad,
-      valorUnitario: item.valorUnitario,
-      precioUnitario: item.precioUnitario,
-      subtotal: item.subtotal,
-      igv: item.igv,
-      total: item.total,
-      codigoAfectacionIgv: item.codigoAfectacionIgv,
-    };
-  }
-
-  private validarEmitirCpeRequest(request: EmitirCpeRequest): readonly string[] {
-    const errores: string[] = [];
-
-    if (!request.rucEmisor || request.rucEmisor !== request.emisor.ruc) {
-      errores.push('El RUC principal del emisor debe coincidir con emisor.ruc.');
-    }
-
-    if (request.tipoComprobante !== '01' && request.tipoComprobante !== '03') {
-      errores.push('El tipo de comprobante debe ser 01 Factura o 03 Boleta.');
-    }
-
-    if (request.tipoComprobante === '01' && !request.serie.toUpperCase().startsWith('F')) {
-      errores.push('Para factura, la serie debe comenzar con F.');
-    }
-
-    if (request.tipoComprobante === '03' && !request.serie.toUpperCase().startsWith('B')) {
-      errores.push('Para boleta, la serie debe comenzar con B.');
-    }
-
-    if (request.correlativo <= 0) {
-      errores.push('El correlativo debe ser mayor a 0.');
-    }
-
-    if (!this.clienteEsValidoParaComprobante(request)) {
-      errores.push('El cliente no cumple las reglas del tipo de comprobante.');
-    }
-
-    if (request.items.length === 0) {
-      errores.push('El comprobante debe tener al menos un ítem.');
-    }
-
-    for (const [index, item] of request.items.entries()) {
-      const numeroItem = index + 1;
-
-      if (item.cantidad <= 0) {
-        errores.push(`El ítem ${numeroItem} debe tener cantidad mayor a 0.`);
-      }
-
-      if (
-        item.valorUnitario < 0 ||
-        item.precioUnitario < 0 ||
-        item.subtotal < 0 ||
-        item.igv < 0 ||
-        item.total < 0
-      ) {
-        errores.push(`El ítem ${numeroItem} contiene importes negativos.`);
-      }
-    }
-
-    const sumaTotales = this.redondear(
-      request.totalGravada + request.totalExonerada + request.totalInafecta + request.totalIgv
-    );
-
-    if (!this.montosCoinciden(sumaTotales, request.total)) {
-      errores.push('El total no coincide con gravada + exonerada + inafecta + IGV.');
-    }
-
-    const totalItems = this.redondear(request.items.reduce((total, item) => total + item.total, 0));
-
-    if (!this.montosCoinciden(totalItems, request.total)) {
-      errores.push('La suma de los totales de ítems no coincide con el total general.');
-    }
-
-    if (request.formaPago !== 'CONTADO') {
-      errores.push('La forma de pago debe ser CONTADO en esta versión.');
-    }
-
-    if (request.cuotas.length > 0) {
-      errores.push('Las cuotas deben estar vacías cuando la forma de pago es CONTADO.');
-    }
-
-    return errores;
-  }
-
   private recalcularImportes(): void {
     const nuevosTotales = { ...TOTALES_INICIALES };
 
@@ -313,10 +181,10 @@ export class EmitirCpePageComponent implements OnInit {
       const cantidad = this.obtenerNumero(item.controls.cantidad.value);
       const valorUnitario = this.obtenerNumero(item.controls.valorUnitario.value);
       const codigoAfectacionIgv = item.controls.codigoAfectacionIgv.value;
-      const subtotal = this.redondear(cantidad * valorUnitario);
-      const igv = codigoAfectacionIgv === '10' ? this.redondear(subtotal * IGV_GRAVADO) : 0;
-      const totalItem = this.redondear(subtotal + igv);
-      const precioUnitario = cantidad > 0 ? this.redondear(totalItem / cantidad) : 0;
+      const subtotal = redondearImporteCpe(cantidad * valorUnitario);
+      const igv = codigoAfectacionIgv === '10' ? redondearImporteCpe(subtotal * IGV_GRAVADO) : 0;
+      const totalItem = redondearImporteCpe(subtotal + igv);
+      const precioUnitario = cantidad > 0 ? redondearImporteCpe(totalItem / cantidad) : 0;
 
       item.patchValue({
         precioUnitario,
@@ -326,19 +194,19 @@ export class EmitirCpePageComponent implements OnInit {
       }, { emitEvent: false });
 
       if (codigoAfectacionIgv === '10') {
-        nuevosTotales.totalGravada = this.redondear(nuevosTotales.totalGravada + subtotal);
+        nuevosTotales.totalGravada = redondearImporteCpe(nuevosTotales.totalGravada + subtotal);
       }
 
       if (codigoAfectacionIgv === '20') {
-        nuevosTotales.totalExonerada = this.redondear(nuevosTotales.totalExonerada + subtotal);
+        nuevosTotales.totalExonerada = redondearImporteCpe(nuevosTotales.totalExonerada + subtotal);
       }
 
       if (codigoAfectacionIgv === '30') {
-        nuevosTotales.totalInafecta = this.redondear(nuevosTotales.totalInafecta + subtotal);
+        nuevosTotales.totalInafecta = redondearImporteCpe(nuevosTotales.totalInafecta + subtotal);
       }
 
-      nuevosTotales.totalIgv = this.redondear(nuevosTotales.totalIgv + igv);
-      nuevosTotales.total = this.redondear(nuevosTotales.total + totalItem);
+      nuevosTotales.totalIgv = redondearImporteCpe(nuevosTotales.totalIgv + igv);
+      nuevosTotales.total = redondearImporteCpe(nuevosTotales.total + totalItem);
     }
 
     this.totales.set(nuevosTotales);
@@ -346,31 +214,6 @@ export class EmitirCpePageComponent implements OnInit {
 
   private obtenerNumero(valor: number): number {
     return Number.isFinite(valor) ? valor : 0;
-  }
-
-  private redondear(valor: number): number {
-    return Math.round((valor + Number.EPSILON) * 100) / 100;
-  }
-
-  private montosCoinciden(izquierda: number, derecha: number): boolean {
-    return Math.abs(izquierda - derecha) <= 0.01;
-  }
-
-  private clienteEsValidoParaComprobante(request: EmitirCpeRequest): boolean {
-    const { tipoDocumento, numeroDocumento } = request.cliente;
-
-    if (request.tipoComprobante === '01') {
-      return tipoDocumento === '6' && /^\d{11}$/.test(numeroDocumento);
-    }
-
-    if (request.tipoComprobante === '03') {
-      return (
-        (tipoDocumento === '1' && /^\d{8}$/.test(numeroDocumento)) ||
-        (tipoDocumento === '6' && /^\d{11}$/.test(numeroDocumento))
-      );
-    }
-
-    return false;
   }
 
   private limpiarValidacionRequest(): void {
