@@ -10,6 +10,7 @@ import { EmitirCpeRequest, ItemCpe } from '../../models/emitir-cpe-request.model
 
 type ConexionCpeEstado = 'comprobando' | 'conectado' | 'error';
 type CodigoAfectacionIgv = '10' | '20' | '30';
+type RequestValidacionEstado = 'sin-validar' | 'valido' | 'invalido';
 
 interface TotalesCpeCalculados {
   readonly totalGravada: number;
@@ -53,6 +54,8 @@ export class EmitirCpePageComponent implements OnInit {
   protected readonly mensajeError = signal('');
   protected readonly totales = signal<TotalesCpeCalculados>(TOTALES_INICIALES);
   protected readonly requestPreview = signal<string | null>(null);
+  protected readonly requestValidacionEstado = signal<RequestValidacionEstado>('sin-validar');
+  protected readonly requestValidacionErrores = signal<readonly string[]>([]);
   private readonly formBuilder = inject(NonNullableFormBuilder);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly emitirForm = this.formBuilder.group({
@@ -90,7 +93,7 @@ export class EmitirCpePageComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.recalcularImportes();
-        this.requestPreview.set(null);
+        this.limpiarValidacionRequest();
       });
     this.recalcularImportes();
   }
@@ -117,12 +120,16 @@ export class EmitirCpePageComponent implements OnInit {
     this.emitirForm.markAllAsTouched();
 
     if (this.emitirForm.invalid) {
-      this.requestPreview.set(null);
+      this.limpiarValidacionRequest();
       return;
     }
 
     const request = this.construirEmitirCpeRequest();
-    this.requestPreview.set(JSON.stringify(request, null, 2));
+    const errores = this.validarEmitirCpeRequest(request);
+
+    this.requestValidacionErrores.set(errores);
+    this.requestValidacionEstado.set(errores.length === 0 ? 'valido' : 'invalido');
+    this.requestPreview.set(errores.length === 0 ? JSON.stringify(request, null, 2) : null);
   }
 
   private verificarConexion(): void {
@@ -225,6 +232,80 @@ export class EmitirCpePageComponent implements OnInit {
     };
   }
 
+  private validarEmitirCpeRequest(request: EmitirCpeRequest): readonly string[] {
+    const errores: string[] = [];
+
+    if (!request.rucEmisor || request.rucEmisor !== request.emisor.ruc) {
+      errores.push('El RUC principal del emisor debe coincidir con emisor.ruc.');
+    }
+
+    if (request.tipoComprobante !== '01' && request.tipoComprobante !== '03') {
+      errores.push('El tipo de comprobante debe ser 01 Factura o 03 Boleta.');
+    }
+
+    if (request.tipoComprobante === '01' && !request.serie.toUpperCase().startsWith('F')) {
+      errores.push('Para factura, la serie debe comenzar con F.');
+    }
+
+    if (request.tipoComprobante === '03' && !request.serie.toUpperCase().startsWith('B')) {
+      errores.push('Para boleta, la serie debe comenzar con B.');
+    }
+
+    if (request.correlativo <= 0) {
+      errores.push('El correlativo debe ser mayor a 0.');
+    }
+
+    if (!this.clienteEsValidoParaComprobante(request)) {
+      errores.push('El cliente no cumple las reglas del tipo de comprobante.');
+    }
+
+    if (request.items.length === 0) {
+      errores.push('El comprobante debe tener al menos un ítem.');
+    }
+
+    for (const [index, item] of request.items.entries()) {
+      const numeroItem = index + 1;
+
+      if (item.cantidad <= 0) {
+        errores.push(`El ítem ${numeroItem} debe tener cantidad mayor a 0.`);
+      }
+
+      if (
+        item.valorUnitario < 0 ||
+        item.precioUnitario < 0 ||
+        item.subtotal < 0 ||
+        item.igv < 0 ||
+        item.total < 0
+      ) {
+        errores.push(`El ítem ${numeroItem} contiene importes negativos.`);
+      }
+    }
+
+    const sumaTotales = this.redondear(
+      request.totalGravada + request.totalExonerada + request.totalInafecta + request.totalIgv
+    );
+
+    if (!this.montosCoinciden(sumaTotales, request.total)) {
+      errores.push('El total no coincide con gravada + exonerada + inafecta + IGV.');
+    }
+
+    const totalItems = this.redondear(request.items.reduce((total, item) => total + item.total, 0));
+
+    if (!this.montosCoinciden(totalItems, request.total)) {
+      errores.push('La suma de los totales de ítems no coincide con el total general.');
+    }
+
+    if (request.formaPago !== 'CONTADO') {
+      errores.push('La forma de pago debe ser CONTADO en esta versión.');
+    }
+
+    if (request.cuotas.length > 0) {
+      errores.push('Las cuotas deben estar vacías cuando la forma de pago es CONTADO.');
+    }
+
+    return errores;
+  }
+
   private recalcularImportes(): void {
     const nuevosTotales = { ...TOTALES_INICIALES };
 
@@ -269,6 +350,33 @@ export class EmitirCpePageComponent implements OnInit {
 
   private redondear(valor: number): number {
     return Math.round((valor + Number.EPSILON) * 100) / 100;
+  }
+
+  private montosCoinciden(izquierda: number, derecha: number): boolean {
+    return Math.abs(izquierda - derecha) <= 0.01;
+  }
+
+  private clienteEsValidoParaComprobante(request: EmitirCpeRequest): boolean {
+    const { tipoDocumento, numeroDocumento } = request.cliente;
+
+    if (request.tipoComprobante === '01') {
+      return tipoDocumento === '6' && /^\d{11}$/.test(numeroDocumento);
+    }
+
+    if (request.tipoComprobante === '03') {
+      return (
+        (tipoDocumento === '1' && /^\d{8}$/.test(numeroDocumento)) ||
+        (tipoDocumento === '6' && /^\d{11}$/.test(numeroDocumento))
+      );
+    }
+
+    return false;
+  }
+
+  private limpiarValidacionRequest(): void {
+    this.requestPreview.set(null);
+    this.requestValidacionEstado.set('sin-validar');
+    this.requestValidacionErrores.set([]);
   }
 
   private validarFormularioCpe(control: AbstractControl): ValidationErrors | null {

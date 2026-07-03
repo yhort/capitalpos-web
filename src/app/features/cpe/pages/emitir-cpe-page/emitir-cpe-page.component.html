@@ -266,6 +266,21 @@
         Generar vista previa
       </button>
 
+      @if (requestValidacionEstado() === 'valido') {
+        <p class="status status--success">request válido</p>
+      }
+
+      @if (requestValidacionEstado() === 'invalido') {
+        <div class="request-errors" role="alert" aria-labelledby="request-errors-title">
+          <h3 id="request-errors-title">request inválido</h3>
+          <ul>
+            @for (error of requestValidacionErrores(); track error) {
+              <li>{{ error }}</li>
+            }
+          </ul>
+        </div>
+      }
+
       @if (requestPreview(); as preview) {
         <div class="preview-panel">
           <h3>Vista previa de EmitirCpeRequest</h3>
