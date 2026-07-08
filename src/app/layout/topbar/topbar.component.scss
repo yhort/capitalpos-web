@@ -29,7 +29,8 @@
     }
 
     &__menu-button,
-    &__notification-button {
+    &__notification-button,
+    &__logout-button {
         border: 0;
         cursor: pointer;
         transition:
@@ -105,6 +106,25 @@
         }
     }
 
+    &__logout-button {
+        min-height: 40px;
+        padding: 0.55rem 0.9rem;
+        color: var(--color-danger);
+        font-size: 0.875rem;
+        font-weight: 700;
+        background: #fef2f2;
+        border-radius: var(--radius-md);
+
+        &:hover {
+            background: #fee2e2;
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--color-danger);
+            outline-offset: 2px;
+        }
+    }
+
     &__notification-count {
         display: inline-flex;
         align-items: center;
@@ -143,6 +163,21 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+
+    &__company {
+        margin-top: 0.2rem;
+        overflow: hidden;
+        color: var(--color-text-secondary);
+        font-size: 0.72rem;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        &--missing {
+            color: var(--color-warning);
+            font-weight: 700;
+        }
+    }
 }
 
 @media (max-width: 768px) {
@@ -167,6 +202,10 @@
             padding-inline: var(--spacing-sm);
         }
 
+        &__logout-button {
+            padding-inline: var(--spacing-sm);
+        }
+
         &__user {
             min-width: 0;
             padding-left: var(--spacing-sm);
@@ -181,6 +220,10 @@
         }
 
         &__notification-button {
+            font-size: 0.75rem;
+        }
+
+        &__logout-button {
             font-size: 0.75rem;
         }
 

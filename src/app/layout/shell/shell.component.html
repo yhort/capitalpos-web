@@ -6,8 +6,9 @@
         (click)="closeMobileSidebar()"></button>
 
     <div class="app-shell__workspace">
-        <app-topbar [pageTitle]="pageTitle()" userName="Usuario" [notificationCount]="0" [menuExpanded]="menuExpanded()"
-            menuControls="main-sidebar" (menuToggle)="toggleSidebar()" />
+        <app-topbar [pageTitle]="pageTitle()" [userName]="userName()" [empresaId]="empresaId()" [notificationCount]="0"
+            [menuExpanded]="menuExpanded()" menuControls="main-sidebar" (menuToggle)="toggleSidebar()"
+            (logout)="logout()" />
 
         <main class="app-shell__content">
             <app-breadcrumb [items]="breadcrumbItems()" />

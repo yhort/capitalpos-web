@@ -25,6 +25,15 @@
         <div class="topbar__user">
             <span class="topbar__user-label">Usuario</span>
             <strong class="topbar__user-name">{{ userName() }}</strong>
+            @if (empresaId()) {
+            <span class="topbar__company">Empresa {{ empresaId() }}</span>
+            } @else {
+            <span class="topbar__company topbar__company--missing">Selecciona una empresa</span>
+            }
         </div>
+
+        <button type="button" class="topbar__logout-button" (click)="onLogout()">
+            Salir
+        </button>
     </div>
 </header>

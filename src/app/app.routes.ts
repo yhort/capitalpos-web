@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 
+import { authChildGuard, authGuard } from './core/auth/auth.guard';
 import { ShellComponent } from './layout/shell/shell.component';
 
 export const routes: Routes = [
@@ -9,8 +10,18 @@ export const routes: Routes = [
         redirectTo: 'app/dashboard',
     },
     {
+        path: 'auth/login',
+        title: 'Iniciar sesión | CapitalPOS',
+        loadComponent: () =>
+            import(
+                './features/auth/pages/login-page/login-page.component'
+            ).then((component) => component.LoginPageComponent),
+    },
+    {
         path: 'app',
         component: ShellComponent,
+        canActivate: [authGuard],
+        canActivateChild: [authChildGuard],
         children: [
             {
                 path: '',

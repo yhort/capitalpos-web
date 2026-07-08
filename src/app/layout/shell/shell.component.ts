@@ -17,6 +17,8 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 
+import { AuthService } from '../../core/auth/auth.service';
+import { EmpresaActivaService } from '../../core/empresa/empresa-activa.service';
 import {
   BreadcrumbComponent,
   BreadcrumbItem,
@@ -40,6 +42,8 @@ export class ShellComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly activatedRoute = inject(ActivatedRoute);
+  private readonly authService = inject(AuthService);
+  private readonly empresaActivaService = inject(EmpresaActivaService);
   private readonly mobileMediaQuery = window.matchMedia('(max-width: 768px)');
   private previousBodyOverflow: string | null = null;
 
@@ -58,6 +62,11 @@ export class ShellComponent {
   readonly breadcrumbItems = signal<readonly BreadcrumbItem[]>(
     this.fallbackBreadcrumbItems,
   );
+  readonly userName = computed(() => {
+    const usuario = this.authService.usuario();
+    return usuario?.correo ?? 'Usuario';
+  });
+  readonly empresaId = this.empresaActivaService.empresaId;
   readonly menuExpanded = computed(() =>
     this.isMobileViewport()
       ? this.mobileSidebarOpen()
@@ -115,6 +124,11 @@ export class ShellComponent {
 
   closeMobileSidebar(): void {
     this.mobileSidebarOpen.set(false);
+  }
+
+  logout(): void {
+    this.authService.logout();
+    this.router.navigate(['/auth/login']);
   }
 
   @HostListener('document:keydown.escape')

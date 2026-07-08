@@ -1,0 +1,37 @@
+<main class="login-page">
+  <section class="login-panel" aria-labelledby="login-title">
+    <div class="login-panel__brand">
+      <span class="login-panel__eyebrow">CapitalPOS</span>
+      <h1 id="login-title">Iniciar sesión</h1>
+    </div>
+
+    @if (mensajeError()) {
+      <p class="login-panel__error" role="alert">{{ mensajeError() }}</p>
+    }
+
+    <form class="login-form" [formGroup]="loginForm" (ngSubmit)="iniciarSesion()">
+      <label>
+        Correo
+        <input type="email" formControlName="correo" autocomplete="username" />
+      </label>
+
+      <label>
+        Contraseña
+        <input type="password" formControlName="password" autocomplete="current-password" />
+      </label>
+
+      <label>
+        Empresa ID
+        <input type="text" formControlName="empresaId" autocomplete="off" />
+      </label>
+
+      <button type="submit" [disabled]="!puedeEnviar()">
+        @if (enviando()) {
+          Ingresando...
+        } @else {
+          Ingresar
+        }
+      </button>
+    </form>
+  </section>
+</main>
