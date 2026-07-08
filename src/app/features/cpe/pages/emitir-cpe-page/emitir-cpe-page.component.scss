@@ -28,21 +28,25 @@
   gap: 1rem;
 }
 
-.health-details {
+.health-details,
+.response-details {
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin: 1rem 0 0;
 }
 
-.health-details dt {
+.health-details dt,
+.response-details dt {
   color: #64748b;
   font-size: 0.8rem;
 }
 
-.health-details dd {
+.health-details dd,
+.response-details dd {
   margin: 0.2rem 0 0;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .form-grid {
@@ -232,6 +236,7 @@ input[readonly] {
 }
 
 .request-errors h3,
+.request-errors h4,
 .request-errors ul {
   margin: 0;
 }
@@ -254,4 +259,38 @@ input[readonly] {
   max-height: 420px;
   overflow: auto;
   padding: 1rem;
+}
+
+.emission-result {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  width: 100%;
+}
+
+.emission-result h3 {
+  margin: 0;
+}
+
+.emission-result__message {
+  margin: 0;
+  color: #334155;
+  font-weight: 700;
+}
+
+.emission-result--success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.emission-result--warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.emission-result--error {
+  background: #fef2f2;
+  border-color: #fecaca;
 }

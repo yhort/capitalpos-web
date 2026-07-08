@@ -2,6 +2,7 @@ export interface CpeEmisionResponse {
   readonly ok: boolean;
   readonly estado: CpeEmisionEstado;
   readonly mensaje: string;
+  readonly codigo?: string | null;
   readonly comprobante: string | null;
   readonly hash: string | null;
   readonly nombreXml: string | null;

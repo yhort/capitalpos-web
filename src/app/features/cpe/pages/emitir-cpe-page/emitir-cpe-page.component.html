@@ -2,7 +2,7 @@
   <header class="page-header">
     <div>
       <h1>Emitir CPE</h1>
-      <p>Primera versión del formulario de emisión. Todavía no envía comprobantes al backend.</p>
+      <p>Completa, valida y emite el comprobante desde capitalpos-api.</p>
     </div>
   </header>
 
@@ -265,6 +265,13 @@
       <button type="button" class="secondary-button" (click)="generarVistaPrevia()" [disabled]="emitirForm.invalid">
         Generar vista previa
       </button>
+      <button type="button" class="primary-button" (click)="emitirCpe()" [disabled]="emisionEstado() === 'enviando'">
+        @if (emisionEstado() === 'enviando') {
+          Enviando...
+        } @else {
+          Emitir CPE
+        }
+      </button>
 
       @if (requestValidacionEstado() === 'valido') {
         <p class="status status--success">request válido</p>
@@ -286,6 +293,86 @@
           <h3>Vista previa de EmitirCpeRequest</h3>
           <pre>{{ preview }}</pre>
         </div>
+      }
+
+      @if (emisionEstado() !== 'sin-emitir') {
+        <section class="emission-result" [class.emission-result--success]="emisionEstado() === 'exito'"
+          [class.emission-result--warning]="emisionEstado() === 'rechazo' || emisionEstado() === 'error-validacion'"
+          [class.emission-result--error]="emisionEstado() === 'error'" aria-labelledby="emision-title">
+          <h3 id="emision-title">Resultado de emisión</h3>
+
+          @if (emisionEstado() === 'enviando') {
+            <p class="status status--checking">enviando</p>
+          }
+
+          @if (emisionEstado() === 'exito') {
+            <p class="status status--success">éxito</p>
+          }
+
+          @if (emisionEstado() === 'rechazo') {
+            <p class="status status--checking">rechazo funcional</p>
+          }
+
+          @if (emisionEstado() === 'error-validacion') {
+            <p class="status status--checking">error de validación</p>
+          }
+
+          @if (emisionEstado() === 'error') {
+            <p class="status status--error">error inesperado</p>
+          }
+
+          @if (emisionMensaje()) {
+            <p class="emission-result__message">{{ emisionMensaje() }}</p>
+          }
+
+          @if (emisionRespuesta(); as respuesta) {
+            <dl class="response-details">
+              <div>
+                <dt>ok</dt>
+                <dd>{{ respuesta.ok }}</dd>
+              </div>
+              <div>
+                <dt>Estado</dt>
+                <dd>{{ respuesta.estado }}</dd>
+              </div>
+              <div>
+                <dt>Mensaje</dt>
+                <dd>{{ respuesta.mensaje }}</dd>
+              </div>
+              <div>
+                <dt>Código</dt>
+                <dd>{{ respuesta.codigo || 'No informado' }}</dd>
+              </div>
+              <div>
+                <dt>Hash</dt>
+                <dd>{{ respuesta.hash || 'No informado' }}</dd>
+              </div>
+              <div>
+                <dt>XML</dt>
+                <dd>{{ respuesta.nombreXml || 'No generado' }}</dd>
+              </div>
+              <div>
+                <dt>ZIP</dt>
+                <dd>{{ respuesta.nombreZip || 'No generado' }}</dd>
+              </div>
+              <div>
+                <dt>CDR</dt>
+                <dd>{{ respuesta.nombreCdr || 'No generado' }}</dd>
+              </div>
+            </dl>
+          }
+
+          @if (emisionErrores().length > 0) {
+            <div class="request-errors" role="alert" aria-labelledby="emision-errors-title">
+              <h4 id="emision-errors-title">Errores</h4>
+              <ul>
+                @for (error of emisionErrores(); track error) {
+                  <li>{{ error }}</li>
+                }
+              </ul>
+            </div>
+          }
+        </section>
       }
     </section>
   </form>
