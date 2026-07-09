@@ -8,7 +8,7 @@ import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.se
 import { CPE_EMISOR_TEMPORAL_CONFIG } from '../../config/cpe-emisor.config';
 import { CpeApiService } from '../../data-access/cpe-api.service';
 import { CpeEmisionResponse } from '../../models/cpe-emision-response.model';
-import { CpeHealthResponse } from '../../models/cpe-health-response.model';
+import { CpeEstadoResponse } from '../../models/cpe-estado-response.model';
 import { EmitirCpeRequest } from '../../models/emitir-cpe-request.model';
 import {
   CodigoAfectacionIgv,
@@ -18,7 +18,13 @@ import {
 } from '../../utils/emitir-cpe-request.mapper';
 import { validarEmitirCpeRequest } from '../../utils/emitir-cpe-request.validator';
 
-type ConexionCpeEstado = 'comprobando' | 'conectado' | 'error';
+type ConexionCpeEstado =
+  | 'cargando'
+  | 'conectado'
+  | 'no-disponible'
+  | 'no-autorizado'
+  | 'respuesta-invalida'
+  | 'error';
 type RequestValidacionEstado = 'sin-validar' | 'valido' | 'invalido';
 type EmisionCpeEstado = 'sin-emitir' | 'enviando' | 'exito' | 'rechazo' | 'error-validacion' | 'error';
 
@@ -38,9 +44,10 @@ const TOTALES_INICIALES: TotalesCpeCalculados = {
   styleUrl: './emitir-cpe-page.component.scss',
 })
 export class EmitirCpePageComponent implements OnInit {
-  protected readonly estadoConexion = signal<ConexionCpeEstado>('comprobando');
-  protected readonly health = signal<CpeHealthResponse | null>(null);
-  protected readonly mensajeError = signal('');
+  protected readonly estadoConexion = signal<ConexionCpeEstado>('cargando');
+  protected readonly estadoCpe = signal<CpeEstadoResponse | null>(null);
+  protected readonly conexionMensaje = signal('');
+  protected readonly conexionErrores = signal<readonly string[]>([]);
   protected readonly totales = signal<TotalesCpeCalculados>(TOTALES_INICIALES);
   protected readonly requestPreview = signal<string | null>(null);
   protected readonly requestValidacionEstado = signal<RequestValidacionEstado>('sin-validar');
@@ -83,7 +90,7 @@ export class EmitirCpePageComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.verificarConexion();
+    this.obtenerEstadoCpe();
     this.emitirForm.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
@@ -165,41 +172,83 @@ export class EmitirCpePageComponent implements OnInit {
     this.requestPreview.set(errores.length === 0 ? JSON.stringify(request, null, 2) : null);
   }
 
-  private verificarConexion(): void {
-    this.estadoConexion.set('comprobando');
-    this.mensajeError.set('');
+  private obtenerEstadoCpe(): void {
+    this.estadoConexion.set('cargando');
+    this.estadoCpe.set(null);
+    this.conexionMensaje.set('');
+    this.conexionErrores.set([]);
 
-    this.cpeApiService.verificarConexion().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.cpeApiService.obtenerEstadoCpe().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (response) => {
-        this.health.set(response.data);
-        this.estadoConexion.set(response.ok && response.data ? 'conectado' : 'error');
-
-        if (!response.ok || !response.data) {
-          this.mensajeError.set(response.mensaje || 'La API CPE no devolvió datos de estado.');
+        if (!this.respuestaEstadoCpeEsValida(response)) {
+          this.estadoConexion.set('respuesta-invalida');
+          this.conexionMensaje.set('capitalpos-api devolvió una respuesta de estado CPE inválida.');
+          return;
         }
+
+        this.estadoCpe.set(response);
+        this.conexionMensaje.set(response.mensaje);
+        this.conexionErrores.set(this.filtrarErroresSeguros(response.errores));
+        this.estadoConexion.set(response.ok && response.estado === 'OK' ? 'conectado' : 'no-disponible');
       },
       error: (error: unknown) => {
-        this.health.set(null);
-        this.estadoConexion.set('error');
-        this.mensajeError.set(this.obtenerMensajeError(error));
+        this.estadoCpe.set(null);
+        this.conexionErrores.set([]);
+        this.estadoConexion.set(this.obtenerEstadoConexionError(error));
+        this.conexionMensaje.set(this.obtenerMensajeConexionError(error));
       }
     });
   }
 
-  private obtenerMensajeError(error: unknown): string {
+  private obtenerEstadoConexionError(error: unknown): ConexionCpeEstado {
     if (error instanceof HttpErrorResponse) {
-      if (error.status === 0) {
-        return 'No se pudo conectar con la API CPE. Revisa que el backend y el proxy estén levantados.';
+      if (error.status === 401 || error.status === 403) {
+        return 'no-autorizado';
       }
 
-      if (error.status === 401) {
-        return 'La API rechazó la solicitud por autenticación.';
+      if (error.status === 0 || error.status === 503) {
+        return 'no-disponible';
       }
-
-      return `La API CPE respondió con estado HTTP ${error.status}.`;
     }
 
-    return 'Ocurrió un error inesperado al comprobar la conexión.';
+    return 'error';
+  }
+
+  private obtenerMensajeConexionError(error: unknown): string {
+    if (error instanceof HttpErrorResponse) {
+      if (error.status === 0) {
+        return 'No se pudo consultar el estado CPE desde capitalpos-api.';
+      }
+
+      if (error.status === 401 || error.status === 403) {
+        return 'No autorizado o configuración de acceso incorrecta para consultar el estado CPE.';
+      }
+
+      if (error.status === 503) {
+        return 'La integración CPE no está disponible en este momento.';
+      }
+    }
+
+    return 'Ocurrió un error inesperado al consultar el estado CPE.';
+  }
+
+  private respuestaEstadoCpeEsValida(response: CpeEstadoResponse): boolean {
+    return (
+      typeof response?.ok === 'boolean' &&
+      typeof response.estado === 'string' &&
+      typeof response.mensaje === 'string' &&
+      typeof response.servicio === 'string' &&
+      typeof response.version === 'string' &&
+      typeof response.modo === 'string' &&
+      typeof response.simularGeneracionXml === 'boolean' &&
+      typeof response.simularFirma === 'boolean' &&
+      typeof response.simularEnvioSunat === 'boolean' &&
+      Array.isArray(response.errores)
+    );
+  }
+
+  private filtrarErroresSeguros(errores: readonly string[]): readonly string[] {
+    return errores.filter((error): error is string => typeof error === 'string' && error.trim().length > 0);
   }
 
   private prepararRequestParaEmision(): EmitirCpeRequest | null {

@@ -45,6 +45,14 @@ describe('authInterceptor', () => {
     request.flush({});
   });
 
+  it('adds Authorization in /api/cpe/estado', () => {
+    http.get('/api/cpe/estado').subscribe();
+
+    const request = httpTestingController.expectOne('/api/cpe/estado');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer jwt-test');
+    request.flush({});
+  });
+
   it('does not add Authorization in /api/health', () => {
     http.get('/api/health').subscribe();
 

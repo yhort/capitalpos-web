@@ -50,6 +50,16 @@ describe('empresaActivaInterceptor', () => {
     request.flush({});
   });
 
+  it('does not add X-CapitalPos-EmpresaId in /api/cpe/estado', () => {
+    empresaActivaService.establecerEmpresaActiva('empresa-1');
+
+    http.get('/api/cpe/estado').subscribe();
+
+    const request = httpTestingController.expectOne('/api/cpe/estado');
+    expect(request.request.headers.has('X-CapitalPos-EmpresaId')).toBe(false);
+    request.flush({});
+  });
+
   it('does not add X-CapitalPos-EmpresaId in /api/auth endpoints', () => {
     empresaActivaService.establecerEmpresaActiva('empresa-1');
 

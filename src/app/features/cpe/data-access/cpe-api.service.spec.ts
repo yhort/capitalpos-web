@@ -41,6 +41,25 @@ describe('CpeApiService', () => {
       errores: [],
     });
   });
+
+  it('gets CPE integration status through capitalpos-api', () => {
+    service.obtenerEstadoCpe().subscribe();
+
+    const httpRequest = httpTestingController.expectOne('/api/cpe/estado');
+    expect(httpRequest.request.method).toBe('GET');
+    httpRequest.flush({
+      ok: true,
+      estado: 'OK',
+      mensaje: 'API CPE funcionando correctamente.',
+      servicio: 'CapitalPOS CPE API',
+      version: '1.0.0',
+      modo: 'BETA',
+      simularGeneracionXml: false,
+      simularFirma: false,
+      simularEnvioSunat: true,
+      errores: [],
+    });
+  });
 });
 
 function crearRequest(): EmitirCpeRequest {

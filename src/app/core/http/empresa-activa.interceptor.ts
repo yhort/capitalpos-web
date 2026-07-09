@@ -25,7 +25,8 @@ function requiereEmpresaActiva(url: string): boolean {
   return (
     path.startsWith('/api/') &&
     !path.startsWith('/api/auth/') &&
-    path !== '/api/health'
+    path !== '/api/health' &&
+    path !== '/api/cpe/estado'
   );
 }
 

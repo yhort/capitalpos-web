@@ -9,18 +9,18 @@
   <section class="connection-panel" aria-labelledby="conexion-cpe-title">
     <h2 id="conexion-cpe-title">Conexión con API CPE</h2>
 
-    @if (estadoConexion() === 'comprobando') {
-      <p class="status status--checking">comprobando</p>
+    @if (estadoConexion() === 'cargando') {
+      <p class="status status--checking">cargando</p>
     }
 
     @if (estadoConexion() === 'conectado') {
-      <p class="status status--success">conectado</p>
+      <p class="status status--success">Conectado</p>
 
-      @if (health(); as api) {
+      @if (estadoCpe(); as api) {
         <dl class="health-details">
           <div>
             <dt>Servicio</dt>
-            <dd>{{ api.service }}</dd>
+            <dd>{{ api.servicio }}</dd>
           </div>
           <div>
             <dt>Versión</dt>
@@ -31,16 +31,63 @@
             <dd>{{ api.modo }}</dd>
           </div>
           <div>
-            <dt>Servidor</dt>
-            <dd>{{ api.fechaServidor }}</dd>
+            <dt>Simulación XML</dt>
+            <dd>{{ api.simularGeneracionXml ? 'Activa' : 'Inactiva' }}</dd>
+          </div>
+          <div>
+            <dt>Simulación firma</dt>
+            <dd>{{ api.simularFirma ? 'Activa' : 'Inactiva' }}</dd>
+          </div>
+          <div>
+            <dt>Simulación envío SUNAT</dt>
+            <dd>{{ api.simularEnvioSunat ? 'Activa' : 'Inactiva' }}</dd>
           </div>
         </dl>
       }
     }
 
+    @if (estadoConexion() === 'no-disponible') {
+      <p class="status status--checking">no disponible</p>
+    }
+
+    @if (estadoConexion() === 'no-autorizado') {
+      <p class="status status--error">no autorizado/configuración incorrecta</p>
+    }
+
+    @if (estadoConexion() === 'respuesta-invalida') {
+      <p class="status status--error">respuesta inválida</p>
+    }
+
     @if (estadoConexion() === 'error') {
-      <p class="status status--error">error</p>
-      <p class="error-message">{{ mensajeError() }}</p>
+      <p class="status status--error">error inesperado</p>
+    }
+
+    @if (estadoConexion() !== 'cargando' && conexionMensaje()) {
+      <p class="connection-message">{{ conexionMensaje() }}</p>
+    }
+
+    @if (estadoConexion() === 'no-disponible' && estadoCpe(); as api) {
+      <dl class="health-details">
+        <div>
+          <dt>Estado</dt>
+          <dd>{{ api.estado }}</dd>
+        </div>
+        <div>
+          <dt>Mensaje</dt>
+          <dd>{{ api.mensaje }}</dd>
+        </div>
+      </dl>
+    }
+
+    @if (conexionErrores().length > 0) {
+      <div class="request-errors" role="alert" aria-labelledby="conexion-errors-title">
+        <h3 id="conexion-errors-title">Errores reportados</h3>
+        <ul>
+          @for (error of conexionErrores(); track error) {
+            <li>{{ error }}</li>
+          }
+        </ul>
+      </div>
     }
   </section>
 
