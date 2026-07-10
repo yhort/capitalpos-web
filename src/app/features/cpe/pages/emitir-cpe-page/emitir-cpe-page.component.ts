@@ -7,7 +7,8 @@ import { AuthService } from '../../../../core/auth/auth.service';
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
 import { CPE_EMISOR_TEMPORAL_CONFIG } from '../../config/cpe-emisor.config';
 import { CpeApiService } from '../../data-access/cpe-api.service';
-import { CpeEmisionResponse } from '../../models/cpe-emision-response.model';
+import { ApiResponse } from '../../models/api-response.model';
+import { CpeEmisionError, CpeEmisionResponse } from '../../models/cpe-emision-response.model';
 import { CpeEstadoResponse } from '../../models/cpe-estado-response.model';
 import { EmitirCpeRequest } from '../../models/emitir-cpe-request.model';
 import {
@@ -26,7 +27,14 @@ type ConexionCpeEstado =
   | 'respuesta-invalida'
   | 'error';
 type RequestValidacionEstado = 'sin-validar' | 'valido' | 'invalido';
-type EmisionCpeEstado = 'sin-emitir' | 'enviando' | 'exito' | 'rechazo' | 'error-validacion' | 'error';
+export type EmisionCpeEstado = 'sin-emitir' | 'enviando' | 'exito' | 'rechazo' | 'error-validacion' | 'error';
+
+export interface ResultadoErrorEmisionCpe {
+  readonly estado: EmisionCpeEstado;
+  readonly mensaje: string;
+  readonly errores: readonly string[];
+  readonly respuesta: CpeEmisionResponse | null;
+}
 
 const IGV_GRAVADO = 0.18;
 const TOTALES_INICIALES: TotalesCpeCalculados = {
@@ -36,6 +44,216 @@ const TOTALES_INICIALES: TotalesCpeCalculados = {
   totalIgv: 0,
   total: 0,
 };
+
+export function clasificarEstadoEmisionCpe(apiOk: boolean, data: CpeEmisionResponse): EmisionCpeEstado {
+  switch (data.estado) {
+    case 'SIMULADO':
+    case 'ACEPTADO':
+      return 'exito';
+    case 'RECHAZADO':
+      return 'rechazo';
+    case 'ERROR_VALIDACION':
+      return 'error-validacion';
+    case 'ERROR_XML':
+    case 'ERROR_FIRMA':
+    case 'ERROR_SUNAT':
+    case 'ERROR_CDR':
+    case 'ERROR_INTERNO':
+    case 'ERROR_CPE':
+    case 'RESPUESTA_CPE_INVALIDA':
+      return 'error';
+  }
+
+  if (!apiOk || !data.ok) {
+    return 'error';
+  }
+
+  return 'error';
+}
+
+export function resolverErrorHttpEmisionCpe(error: unknown): ResultadoErrorEmisionCpe {
+  const response = extraerApiResponseEmisionCpe(error);
+
+  if (response) {
+    const data = response.data;
+
+    if (!data) {
+      return {
+        estado: obtenerEstadoErrorHttpFallback(error),
+        mensaje: response.mensaje || obtenerMensajeEmisionErrorFallback(error),
+        errores: filtrarErroresSeguros(response.errores),
+        respuesta: null,
+      };
+    }
+
+    return {
+      estado: clasificarEstadoEmisionCpe(response.ok, data),
+      mensaje: data.mensaje || response.mensaje || obtenerMensajeEmisionErrorFallback(error),
+      errores: obtenerMensajesEmisionCpe(data.errores, response.errores),
+      respuesta: data,
+    };
+  }
+
+  return {
+    estado: obtenerEstadoErrorHttpFallback(error),
+    mensaje: obtenerMensajeEmisionErrorFallback(error),
+    errores: obtenerErroresHttpFallback(error),
+    respuesta: null,
+  };
+}
+
+export function obtenerMensajesEmisionCpe(
+  erroresEstructurados: readonly CpeEmisionError[],
+  erroresRaiz: readonly string[],
+): readonly string[] {
+  const mensajesEstructurados = erroresEstructurados
+    .map((error) => error.mensaje)
+    .filter((mensaje): mensaje is string => typeof mensaje === 'string' && mensaje.trim().length > 0);
+
+  return mensajesEstructurados.length > 0 ? mensajesEstructurados : filtrarErroresSeguros(erroresRaiz);
+}
+
+function extraerApiResponseEmisionCpe(error: unknown): ApiResponse<CpeEmisionResponse> | null {
+  if (!(error instanceof HttpErrorResponse)) {
+    return null;
+  }
+
+  return esApiResponseEmisionCpe(error.error) ? error.error : null;
+}
+
+function esApiResponseEmisionCpe(value: unknown): value is ApiResponse<CpeEmisionResponse> {
+  if (!esRegistro(value)) {
+    return false;
+  }
+
+  return (
+    typeof value['ok'] === 'boolean' &&
+    typeof value['mensaje'] === 'string' &&
+    (value['data'] === null || esCpeEmisionResponse(value['data'])) &&
+    esStringArray(value['errores'])
+  );
+}
+
+function esCpeEmisionResponse(value: unknown): value is CpeEmisionResponse {
+  if (!esRegistro(value)) {
+    return false;
+  }
+
+  return (
+    typeof value['ok'] === 'boolean' &&
+    esCpeEmisionEstado(value['estado']) &&
+    esStringONull(value['mensaje']) &&
+    esStringONull(value['codigo']) &&
+    esStringONull(value['comprobante']) &&
+    esStringONull(value['hash']) &&
+    esStringONull(value['nombreXml']) &&
+    esStringONull(value['nombreZip']) &&
+    esStringONull(value['nombreCdr']) &&
+    esCpeEmisionErrorArray(value['errores'])
+  );
+}
+
+function esCpeEmisionEstado(value: unknown): value is CpeEmisionResponse['estado'] {
+  return (
+    value === 'SIMULADO' ||
+    value === 'ACEPTADO' ||
+    value === 'RECHAZADO' ||
+    value === 'ERROR_VALIDACION' ||
+    value === 'ERROR_XML' ||
+    value === 'ERROR_FIRMA' ||
+    value === 'ERROR_SUNAT' ||
+    value === 'ERROR_CDR' ||
+    value === 'ERROR_INTERNO' ||
+    value === 'ERROR_CPE' ||
+    value === 'RESPUESTA_CPE_INVALIDA'
+  );
+}
+
+function esCpeEmisionErrorArray(value: unknown): value is readonly CpeEmisionError[] {
+  return Array.isArray(value) && value.every(esCpeEmisionError);
+}
+
+function esCpeEmisionError(value: unknown): value is CpeEmisionError {
+  return (
+    esRegistro(value) &&
+    esStringONull(value['codigo']) &&
+    esStringONull(value['campo']) &&
+    typeof value['mensaje'] === 'string'
+  );
+}
+
+function obtenerEstadoErrorHttpFallback(error: unknown): EmisionCpeEstado {
+  if (error instanceof HttpErrorResponse && error.status === 400) {
+    return 'error-validacion';
+  }
+
+  return 'error';
+}
+
+function obtenerMensajeEmisionErrorFallback(error: unknown): string {
+  if (error instanceof HttpErrorResponse) {
+    const apiMessage = extraerMensajeApi(error);
+
+    if (apiMessage) {
+      return apiMessage;
+    }
+
+    if (error.status === 0) {
+      return 'No se pudo conectar con capitalpos-api.';
+    }
+
+    if (error.status === 400) {
+      return 'capitalpos-api rechazó la solicitud por validación.';
+    }
+
+    if (error.status === 401) {
+      return 'La sesión no es válida o expiró.';
+    }
+
+    if (error.status === 403) {
+      return 'No tienes permisos para emitir CPE con la empresa activa.';
+    }
+
+    return `capitalpos-api respondió con estado HTTP ${error.status}.`;
+  }
+
+  return 'Ocurrió un error inesperado al emitir el CPE.';
+}
+
+function obtenerErroresHttpFallback(error: unknown): readonly string[] {
+  if (!(error instanceof HttpErrorResponse) || !esRegistro(error.error)) {
+    return [];
+  }
+
+  const errores = error.error['errores'];
+
+  return esStringArray(errores) ? filtrarErroresSeguros(errores) : [];
+}
+
+function extraerMensajeApi(error: HttpErrorResponse): string {
+  if (!esRegistro(error.error)) {
+    return '';
+  }
+
+  const message = error.error['message'] ?? error.error['mensaje'];
+  return typeof message === 'string' ? message : '';
+}
+
+function filtrarErroresSeguros(errores: readonly string[]): readonly string[] {
+  return errores.filter((error): error is string => typeof error === 'string' && error.trim().length > 0);
+}
+
+function esStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function esStringONull(value: unknown): value is string | null {
+  return typeof value === 'string' || value === null;
+}
+
+function esRegistro(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 @Component({
   selector: 'app-emitir-cpe-page',
@@ -144,14 +362,17 @@ export class EmitirCpePageComponent implements OnInit {
         }
 
         this.emisionRespuesta.set(data);
-        this.emisionErrores.set(data.errores ?? response.errores ?? []);
+        this.emisionErrores.set(this.obtenerMensajesEmision(data.errores, response.errores));
         this.emisionMensaje.set(data.mensaje || response.mensaje || 'Emisión procesada.');
         this.emisionEstado.set(this.clasificarEmision(response.ok, data));
       },
       error: (error: unknown) => {
-        this.emisionEstado.set(this.obtenerEstadoErrorHttp(error));
-        this.emisionMensaje.set(this.obtenerMensajeEmisionError(error));
-        this.emisionErrores.set(this.obtenerErroresHttp(error));
+        const resultado = resolverErrorHttpEmisionCpe(error);
+
+        this.emisionRespuesta.set(resultado.respuesta);
+        this.emisionEstado.set(resultado.estado);
+        this.emisionMensaje.set(resultado.mensaje);
+        this.emisionErrores.set(resultado.errores);
       },
     });
   }
@@ -248,7 +469,7 @@ export class EmitirCpePageComponent implements OnInit {
   }
 
   private filtrarErroresSeguros(errores: readonly string[]): readonly string[] {
-    return errores.filter((error): error is string => typeof error === 'string' && error.trim().length > 0);
+    return filtrarErroresSeguros(errores);
   }
 
   private prepararRequestParaEmision(): EmitirCpeRequest | null {
@@ -303,76 +524,30 @@ export class EmitirCpePageComponent implements OnInit {
   }
 
   private clasificarEmision(apiOk: boolean, data: CpeEmisionResponse): EmisionCpeEstado {
-    if (data.estado === 'ERROR_VALIDACION') {
-      return 'error-validacion';
-    }
-
-    if (!apiOk || !data.ok || data.estado === 'RECHAZADO') {
-      return 'rechazo';
-    }
-
-    if (data.estado === 'ACEPTADO' || data.estado === 'SIMULADO') {
-      return 'exito';
-    }
-
-    return 'error';
+    return clasificarEstadoEmisionCpe(apiOk, data);
   }
 
   private obtenerEstadoErrorHttp(error: unknown): EmisionCpeEstado {
-    if (error instanceof HttpErrorResponse && error.status === 400) {
-      return 'error-validacion';
-    }
-
-    return 'error';
+    return obtenerEstadoErrorHttpFallback(error);
   }
 
   private obtenerMensajeEmisionError(error: unknown): string {
-    if (error instanceof HttpErrorResponse) {
-      const apiMessage = this.extraerMensajeApi(error);
-
-      if (apiMessage) {
-        return apiMessage;
-      }
-
-      if (error.status === 0) {
-        return 'No se pudo conectar con capitalpos-api.';
-      }
-
-      if (error.status === 400) {
-        return 'capitalpos-api rechazó la solicitud por validación.';
-      }
-
-      if (error.status === 401) {
-        return 'La sesión no es válida o expiró.';
-      }
-
-      if (error.status === 403) {
-        return 'No tienes permisos para emitir CPE con la empresa activa.';
-      }
-
-      return `capitalpos-api respondió con estado HTTP ${error.status}.`;
-    }
-
-    return 'Ocurrió un error inesperado al emitir el CPE.';
+    return obtenerMensajeEmisionErrorFallback(error);
   }
 
   private obtenerErroresHttp(error: unknown): readonly string[] {
-    if (!(error instanceof HttpErrorResponse)) {
-      return [];
-    }
+    return obtenerErroresHttpFallback(error);
+  }
 
-    const errores = error.error?.errores;
-
-    if (Array.isArray(errores)) {
-      return errores.filter((item): item is string => typeof item === 'string');
-    }
-
-    return [];
+  private obtenerMensajesEmision(
+    erroresEstructurados: readonly CpeEmisionError[],
+    erroresRaiz: readonly string[],
+  ): readonly string[] {
+    return obtenerMensajesEmisionCpe(erroresEstructurados, erroresRaiz);
   }
 
   private extraerMensajeApi(error: HttpErrorResponse): string {
-    const message = error.error?.message ?? error.error?.mensaje;
-    return typeof message === 'string' ? message : '';
+    return extraerMensajeApi(error);
   }
 
   private crearItemForm() {

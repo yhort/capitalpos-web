@@ -2,6 +2,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
+import { ApiResponse } from '../models/api-response.model';
+import { CpeEmisionEstado, CpeEmisionResponse } from '../models/cpe-emision-response.model';
 import { EmitirCpeRequest } from '../models/emitir-cpe-request.model';
 import { CpeApiService } from './cpe-api.service';
 
@@ -28,18 +30,36 @@ describe('CpeApiService', () => {
 
   it('posts CPE emissions through capitalpos-api', () => {
     const request = crearRequest();
+    const response = crearEmisionResponse();
 
-    service.emitirCpe(request).subscribe();
+    service.emitirCpe(request).subscribe((apiResponse) => {
+      expect(apiResponse).toEqual(response);
+      expect(apiResponse.data?.estado).toBe('SIMULADO');
+      expect(apiResponse.data?.errores).toEqual([]);
+    });
 
     const httpRequest = httpTestingController.expectOne('/api/cpe/emitir');
     expect(httpRequest.request.method).toBe('POST');
     expect(httpRequest.request.body).toEqual(request);
-    httpRequest.flush({
-      ok: true,
-      mensaje: 'Emitido',
-      data: null,
-      errores: [],
-    });
+    httpRequest.flush(response);
+  });
+
+  it('accepts all canonical CPE emission states from the public contract', () => {
+    const estados: readonly CpeEmisionEstado[] = [
+      'SIMULADO',
+      'ACEPTADO',
+      'RECHAZADO',
+      'ERROR_VALIDACION',
+      'ERROR_XML',
+      'ERROR_FIRMA',
+      'ERROR_SUNAT',
+      'ERROR_CDR',
+      'ERROR_INTERNO',
+      'ERROR_CPE',
+      'RESPUESTA_CPE_INVALIDA',
+    ];
+
+    expect(estados).toHaveLength(11);
   });
 
   it('gets CPE integration status through capitalpos-api', () => {
@@ -61,6 +81,26 @@ describe('CpeApiService', () => {
     });
   });
 });
+
+function crearEmisionResponse(): ApiResponse<CpeEmisionResponse> {
+  return {
+    ok: true,
+    mensaje: 'Comprobante aceptado en modo simulacion.',
+    data: {
+      ok: true,
+      estado: 'SIMULADO',
+      mensaje: 'Comprobante aceptado en modo simulacion.',
+      codigo: 'SIMULADO',
+      comprobante: 'B001-1',
+      hash: 'abc123',
+      nombreXml: '20123456789-03-B001-1.xml',
+      nombreZip: '20123456789-03-B001-1.zip',
+      nombreCdr: 'R-20123456789-03-B001-1.zip',
+      errores: [],
+    },
+    errores: [],
+  };
+}
 
 function crearRequest(): EmitirCpeRequest {
   return {
