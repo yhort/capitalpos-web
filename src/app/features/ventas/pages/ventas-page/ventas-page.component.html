@@ -5,8 +5,8 @@
       <p>Registra una venta minima con cliente, productos y totales calculados.</p>
     </div>
 
-    <button type="button" class="ghost-button" (click)="cargarDatosIniciales()" [disabled]="estado() === 'cargando'">
-      Actualizar
+    <button type="button" class="ghost-button" (click)="cargarDatosIniciales(true)" [disabled]="estado() === 'cargando' || estado() === 'guardando' || emisionEstado() === 'emitiendo'">
+      Actualizar datos
     </button>
   </header>
 
@@ -29,7 +29,7 @@
 
         <label>
           <span>Producto</span>
-          <select formControlName="productoId">
+          <select formControlName="productoId" [disabled]="productosActivos().length === 0 || estado() === 'guardando'">
             <option value="">Seleccionar</option>
             @for (producto of productosFiltrados(); track producto.id) {
               <option [value]="producto.id">
@@ -44,7 +44,7 @@
           <input type="number" min="0.01" step="0.01" formControlName="cantidad" />
         </label>
 
-        <button type="submit" class="primary-button" [disabled]="estado() === 'cargando' || estado() === 'guardando'">
+        <button type="submit" class="primary-button" [disabled]="estado() === 'cargando' || estado() === 'guardando' || productosActivos().length === 0">
           Agregar
         </button>
       </form>
@@ -52,7 +52,10 @@
       @if (estado() === 'cargando') {
         <p class="empty-state">Cargando catalogo...</p>
       } @else if (productosActivos().length === 0) {
-        <p class="empty-state">No hay productos activos para vender.</p>
+        <div class="empty-state empty-state--action">
+          <p>No hay productos activos para vender.</p>
+          <a class="link-button" routerLink="/app/productos">Crear producto</a>
+        </div>
       } @else if (productosFiltrados().length === 0) {
         <p class="empty-state">No hay productos que coincidan con la busqueda.</p>
       }
@@ -121,7 +124,14 @@
       </form>
 
       @if (items().length === 0) {
-        <p class="empty-state">Agrega productos para registrar la venta.</p>
+        @if (productosActivos().length === 0 && estado() !== 'cargando') {
+          <div class="empty-state empty-state--action">
+            <p>Crea al menos un producto activo antes de registrar ventas.</p>
+            <a class="link-button" routerLink="/app/productos">Ir a productos</a>
+          </div>
+        } @else {
+          <p class="empty-state">Agrega productos para registrar la venta.</p>
+        }
       } @else {
         <div class="sale-items" role="table" aria-label="Detalle de venta">
           <div class="sale-items__row sale-items__row--head" role="row">
@@ -146,15 +156,15 @@
 
       <dl class="totals">
         <div>
-          <dt>Subtotal</dt>
+          <dt>Subtotal sin IGV</dt>
           <dd>S/ {{ subtotal() | number: '1.2-2' }}</dd>
         </div>
         <div>
-          <dt>IGV</dt>
+          <dt>IGV (18%)</dt>
           <dd>S/ {{ igv() | number: '1.2-2' }}</dd>
         </div>
         <div class="totals__grand">
-          <dt>Total</dt>
+          <dt>Total a cobrar</dt>
           <dd>S/ {{ total() | number: '1.2-2' }}</dd>
         </div>
       </dl>
@@ -163,16 +173,31 @@
         <button type="button" class="ghost-button" (click)="limpiarVenta()" [disabled]="items().length === 0 || estado() === 'guardando'">
           Limpiar
         </button>
-        <button type="button" class="primary-button" (click)="registrarVenta()" [disabled]="items().length === 0 || estado() === 'guardando'">
-          Registrar venta
+        <button type="button" class="primary-button" (click)="registrarVenta()" [disabled]="!puedeRegistrarVenta()">
+          {{ estado() === 'guardando' ? 'Registrando...' : 'Registrar venta' }}
         </button>
       </div>
 
       @if (ultimaVenta(); as venta) {
         <div class="sale-result" role="status">
-          <strong>Venta registrada</strong>
-          <span>{{ venta.id }}</span>
-          <span>Estado: {{ venta.estado }}</span>
+          <div>
+            <strong>Venta registrada</strong>
+            <span>Lista para emitir comprobante</span>
+          </div>
+          <dl>
+            <div>
+              <dt>ID</dt>
+              <dd>{{ venta.id }}</dd>
+            </div>
+            <div>
+              <dt>Estado</dt>
+              <dd>{{ venta.estado }}</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd>S/ {{ venta.total | number: '1.2-2' }}</dd>
+            </div>
+          </dl>
         </div>
 
         <section class="cpe-emission" aria-labelledby="emision-title">

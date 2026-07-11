@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
@@ -31,21 +32,43 @@ describe('VentasPageComponent', () => {
             empresaId: () => 'empresa-1',
           },
         },
+        provideRouter([]),
       ],
     }).compileComponents();
+  });
 
+  async function crearComponente(): Promise<void> {
     fixture = TestBed.createComponent(VentasPageComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
     await fixture.whenStable();
-  });
+    fixture.detectChanges();
+  }
 
-  it('loads products and clients', () => {
+  it('loads products and clients', async () => {
+    await crearComponente();
+
     expect(fixture.nativeElement.textContent).toContain('Polo');
     expect(fixture.nativeElement.textContent).toContain('Cliente Test');
   });
 
-  it('adds products and registers a sale with calculated totals', () => {
+  it('shows a clear path to create products when the catalog is empty', async () => {
+    posApi.productos = [];
+
+    await crearComponente();
+
+    const textContent = fixture.nativeElement.textContent;
+    const links = Array.from(fixture.nativeElement.querySelectorAll('a')) as HTMLAnchorElement[];
+
+    expect(textContent).toContain('No hay productos activos para vender.');
+    expect(textContent).toContain('Crea al menos un producto activo antes de registrar ventas.');
+    expect(textContent).toContain('Crear producto');
+    expect(links.some((link) => link.getAttribute('href')?.endsWith('/app/productos'))).toBe(true);
+  });
+
+  it('adds products and registers a sale with calculated totals', async () => {
+    await crearComponente();
+
     component['productoForm'].patchValue({
       productoId: 'producto-1',
       cantidad: 2,
@@ -69,9 +92,27 @@ describe('VentasPageComponent', () => {
       ],
     });
     expect(component['ultimaVenta']()?.id).toBe('venta-1');
+    expect(component['mensaje']()).toContain('Venta registrada correctamente.');
   });
 
-  it('emits CPE from the last registered sale', () => {
+  it('does not register twice while a sale is already being saved', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    component['estado'].set('guardando');
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest).toBeNull();
+  });
+
+  it('emits CPE from the last registered sale', async () => {
+    await crearComponente();
+
     component['productoForm'].patchValue({
       productoId: 'producto-1',
       cantidad: 1,
@@ -100,36 +141,38 @@ class PosApiServiceFake {
   ultimaVentaRequest: CrearVentaRequest | null = null;
   ultimaEmisionVentaId: string | null = null;
   ultimaEmisionRequest: EmitirCpeDesdeVentaRequest | null = null;
+  productos: readonly ProductoResponse[] = [
+    {
+      id: 'producto-1',
+      empresaId: 'empresa-1',
+      nombre: 'Polo',
+      codigoSku: 'POLO-001',
+      codigoBarras: '',
+      precioVenta: 11.8,
+      costo: null,
+      activo: true,
+      fechaCreacion: '2026-07-11T00:00:00Z',
+    },
+  ];
+  clientes: readonly ClienteResponse[] = [
+    {
+      id: 'cliente-1',
+      empresaId: 'empresa-1',
+      tipoDocumento: 'DNI',
+      numeroDocumento: '12345678',
+      nombreRazonSocial: 'Cliente Test',
+      direccion: '',
+      activo: true,
+      fechaCreacion: '2026-07-11T00:00:00Z',
+    },
+  ];
 
   listarProductos() {
-    return of<readonly ProductoResponse[]>([
-      {
-        id: 'producto-1',
-        empresaId: 'empresa-1',
-        nombre: 'Polo',
-        codigoSku: 'POLO-001',
-        codigoBarras: '',
-        precioVenta: 11.8,
-        costo: null,
-        activo: true,
-        fechaCreacion: '2026-07-11T00:00:00Z',
-      },
-    ]);
+    return of(this.productos);
   }
 
   listarClientes() {
-    return of<readonly ClienteResponse[]>([
-      {
-        id: 'cliente-1',
-        empresaId: 'empresa-1',
-        tipoDocumento: 'DNI',
-        numeroDocumento: '12345678',
-        nombreRazonSocial: 'Cliente Test',
-        direccion: '',
-        activo: true,
-        fechaCreacion: '2026-07-11T00:00:00Z',
-      },
-    ]);
+    return of(this.clientes);
   }
 
   crearCliente() {

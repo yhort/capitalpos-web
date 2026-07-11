@@ -143,6 +143,25 @@ select:focus {
     color var(--transition-fast);
 }
 
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0.5rem 0.85rem;
+  color: var(--color-primary);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  background: #ffffff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    border-color: var(--color-primary);
+  }
+}
+
 .primary-button {
   padding: 0.55rem 0.9rem;
   color: #ffffff;
@@ -173,6 +192,16 @@ button:disabled {
   margin: var(--spacing-md) 0 0;
   color: var(--color-text-secondary);
   font-size: 0.9rem;
+}
+
+.empty-state--action {
+  display: grid;
+  gap: var(--spacing-sm);
+  justify-items: start;
+
+  p {
+    margin: 0;
+  }
 }
 
 .sale-items {
@@ -251,7 +280,7 @@ button:disabled {
 
 .sale-result {
   display: grid;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
   padding: var(--spacing-md);
   color: #14532d;
@@ -259,7 +288,39 @@ button:disabled {
   border: 1px solid #bbf7d0;
   border-radius: var(--radius-md);
 
+  > div {
+    display: grid;
+    gap: var(--spacing-xs);
+  }
+
+  strong {
+    font-size: 0.98rem;
+  }
+
   span {
+    color: #166534;
+    font-size: 0.88rem;
+  }
+
+  dl {
+    display: grid;
+    gap: var(--spacing-xs);
+    margin: 0;
+  }
+
+  dl div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+
+  dt {
+    color: #166534;
+  }
+
+  dd {
+    margin: 0;
+    font-weight: 700;
     overflow-wrap: anywhere;
   }
 }

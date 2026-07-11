@@ -2,6 +2,7 @@ import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
@@ -30,7 +31,7 @@ const IGV = 0.18;
 
 @Component({
   selector: 'app-ventas-page',
-  imports: [DecimalPipe, ReactiveFormsModule],
+  imports: [DecimalPipe, ReactiveFormsModule, RouterLink],
   templateUrl: './ventas-page.component.html',
   styleUrl: './ventas-page.component.scss',
 })
@@ -110,11 +111,19 @@ export class VentasPageComponent implements OnInit {
     redondear(this.items().reduce((total, item) => total + this.calcularTotalItem(item), 0)),
   );
 
+  protected readonly puedeRegistrarVenta = computed(() =>
+    this.items().length > 0 && this.estado() !== 'guardando',
+  );
+
   ngOnInit(): void {
     this.cargarDatosIniciales();
   }
 
-  protected cargarDatosIniciales(): void {
+  protected cargarDatosIniciales(mostrarMensaje = false): void {
+    if (this.estado() === 'guardando' || this.emisionEstado() === 'emitiendo') {
+      return;
+    }
+
     this.estado.set('cargando');
     this.mensaje.set('');
 
@@ -126,6 +135,7 @@ export class VentasPageComponent implements OnInit {
         this.productos.set(productos);
         this.clientes.set(clientes);
         this.estado.set('listo');
+        this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados.' : '');
       },
       error: (error: unknown) => {
         this.estado.set('error');
@@ -135,6 +145,10 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected agregarProducto(): void {
+    if (this.estado() === 'guardando') {
+      return;
+    }
+
     this.productoForm.markAllAsTouched();
 
     if (this.productoForm.invalid) {
@@ -169,6 +183,10 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected quitarProducto(productoId: string): void {
+    if (this.estado() === 'guardando') {
+      return;
+    }
+
     this.items.update((items) => items.filter((item) => item.producto.id !== productoId));
     this.ultimaVenta.set(null);
   }
@@ -179,6 +197,10 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected crearClienteRapido(): void {
+    if (this.estado() === 'guardando') {
+      return;
+    }
+
     const nombreRazonSocial = this.clienteForm.controls.nombreRazonSocial.value.trim();
 
     if (!nombreRazonSocial) {
@@ -215,6 +237,10 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected registrarVenta(): void {
+    if (this.estado() === 'guardando') {
+      return;
+    }
+
     if (!this.empresaActivaService.empresaId()) {
       this.mensaje.set('Selecciona una empresa activa antes de vender.');
       return;
@@ -235,7 +261,7 @@ export class VentasPageComponent implements OnInit {
         this.items.set([]);
         this.limpiarResultadoEmision();
         this.estado.set('listo');
-        this.mensaje.set(`Venta ${venta.id} registrada por S/ ${venta.total.toFixed(2)}.`);
+        this.mensaje.set(`Venta registrada correctamente. ID: ${venta.id}. Total: S/ ${venta.total.toFixed(2)}.`);
       },
       error: (error: unknown) => {
         this.estado.set('listo');
@@ -245,6 +271,10 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected limpiarVenta(): void {
+    if (this.estado() === 'guardando') {
+      return;
+    }
+
     this.items.set([]);
     this.ultimaVenta.set(null);
     this.mensaje.set('');
@@ -252,6 +282,10 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected emitirComprobante(): void {
+    if (this.emisionEstado() === 'emitiendo') {
+      return;
+    }
+
     const venta = this.ultimaVenta();
 
     if (!venta) {
@@ -363,6 +397,18 @@ export class VentasPageComponent implements OnInit {
 
       if (error.status === 403) {
         return 'No tienes permisos suficientes para operar ventas.';
+      }
+
+      if (error.status === 400) {
+        return 'Revisa los datos de la venta e intenta nuevamente.';
+      }
+
+      if (error.status === 404) {
+        return 'No se encontro el recurso solicitado para completar la venta.';
+      }
+
+      if (error.status >= 500) {
+        return 'capitalpos-api no pudo procesar la operacion en este momento.';
       }
     }
 

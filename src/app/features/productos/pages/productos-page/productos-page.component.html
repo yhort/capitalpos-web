@@ -1,0 +1,116 @@
+<section class="products-page">
+  <header class="products-page__header">
+    <div>
+      <h2>Productos</h2>
+      <p>Crea productos básicos para vender en el POS y consulta el catálogo de la empresa activa.</p>
+    </div>
+
+    <button type="button" class="ghost-button" (click)="cargarProductos()" [disabled]="estado() === 'cargando'">
+      Actualizar
+    </button>
+  </header>
+
+  @if (mensaje()) {
+    <p class="status-message" role="status">{{ mensaje() }}</p>
+  }
+
+  <div class="products-layout">
+    <section class="products-panel" aria-labelledby="crear-producto-title">
+      <div class="products-panel__header">
+        <h3 id="crear-producto-title">Nuevo producto</h3>
+        <span>Basico</span>
+      </div>
+
+      <form class="product-form" [formGroup]="productoForm" (ngSubmit)="crearProducto()">
+        <label class="product-form__full">
+          <span>Nombre</span>
+          <input type="text" formControlName="nombre" maxlength="200" />
+        </label>
+
+        <label>
+          <span>Precio venta</span>
+          <input type="number" min="0.01" step="0.01" formControlName="precioVenta" />
+        </label>
+
+        <label>
+          <span>Costo</span>
+          <input type="number" min="0" step="0.01" formControlName="costo" />
+        </label>
+
+        <label>
+          <span>SKU</span>
+          <input type="text" formControlName="codigoSku" maxlength="80" />
+        </label>
+
+        <label>
+          <span>Codigo barras</span>
+          <input type="text" formControlName="codigoBarras" maxlength="80" />
+        </label>
+
+        @if (productoForm.invalid && productoForm.touched) {
+          <div class="form-errors" role="alert">
+            @if (productoForm.controls.nombre.invalid) {
+              <span>El nombre es obligatorio y debe tener hasta 200 caracteres.</span>
+            }
+            @if (productoForm.controls.precioVenta.invalid) {
+              <span>El precio de venta debe ser mayor que cero.</span>
+            }
+            @if (productoForm.controls.costo.invalid) {
+              <span>El costo no puede ser negativo.</span>
+            }
+            @if (productoForm.controls.codigoSku.invalid || productoForm.controls.codigoBarras.invalid) {
+              <span>SKU y codigo de barras deben tener hasta 80 caracteres.</span>
+            }
+          </div>
+        }
+
+        <button type="submit" class="primary-button product-form__full" [disabled]="estado() === 'guardando'">
+          Crear producto
+        </button>
+      </form>
+    </section>
+
+    <section class="products-panel products-panel--list" aria-labelledby="catalogo-title">
+      <div class="products-panel__header">
+        <h3 id="catalogo-title">Catálogo</h3>
+        <span>{{ productosFiltrados().length }} / {{ productos().length }}</span>
+      </div>
+
+      <label class="search-field">
+        <span>Buscar</span>
+        <input type="search" [value]="busqueda()" (input)="actualizarBusqueda($event)" />
+      </label>
+
+      @if (estado() === 'cargando') {
+        <p class="empty-state">Cargando productos...</p>
+      } @else if (productos().length === 0) {
+        <p class="empty-state">Aun no hay productos creados.</p>
+      } @else if (productosFiltrados().length === 0) {
+        <p class="empty-state">No hay productos que coincidan con la búsqueda.</p>
+      } @else {
+        <div class="products-table" role="table" aria-label="Productos registrados">
+          <div class="products-table__row products-table__row--head" role="row">
+            <span>Producto</span>
+            <span>SKU</span>
+            <span>Precio</span>
+            <span>Estado</span>
+          </div>
+
+          @for (producto of productosFiltrados(); track producto.id) {
+            <div class="products-table__row" role="row">
+              <span>
+                <strong>{{ producto.nombre }}</strong>
+                <small>{{ producto.codigoBarras || 'sin código de barras' }}</small>
+              </span>
+              <span>{{ producto.codigoSku || 'sin SKU' }}</span>
+              <span>S/ {{ producto.precioVenta | number: '1.2-2' }}</span>
+              <span [class.product-status--inactive]="!producto.activo">
+                {{ producto.activo ? 'Activo' : 'Inactivo' }}
+              </span>
+            </div>
+          }
+        </div>
+      }
+    </section>
+  </div>
+</section>
