@@ -1,0 +1,255 @@
+<section class="pos-page">
+  <header class="pos-page__header">
+    <div>
+      <h2>Ventas POS</h2>
+      <p>Registra una venta minima con cliente, productos y totales calculados.</p>
+    </div>
+
+    <button type="button" class="ghost-button" (click)="cargarDatosIniciales()" [disabled]="estado() === 'cargando'">
+      Actualizar
+    </button>
+  </header>
+
+  @if (mensaje()) {
+    <p class="status-message" role="status">{{ mensaje() }}</p>
+  }
+
+  <div class="pos-layout">
+    <section class="pos-panel pos-panel--catalog" aria-labelledby="productos-title">
+      <div class="pos-panel__header">
+        <h3 id="productos-title">Productos</h3>
+        <span>{{ productosActivos().length }} activos</span>
+      </div>
+
+      <form class="inline-form" [formGroup]="productoForm" (ngSubmit)="agregarProducto()">
+        <label class="inline-form__full">
+          <span>Buscar producto</span>
+          <input type="search" [value]="busquedaProducto()" (input)="actualizarBusquedaProducto($event)" />
+        </label>
+
+        <label>
+          <span>Producto</span>
+          <select formControlName="productoId">
+            <option value="">Seleccionar</option>
+            @for (producto of productosFiltrados(); track producto.id) {
+              <option [value]="producto.id">
+                {{ producto.nombre }} - S/ {{ producto.precioVenta | number: '1.2-2' }}
+              </option>
+            }
+          </select>
+        </label>
+
+        <label>
+          <span>Cantidad</span>
+          <input type="number" min="0.01" step="0.01" formControlName="cantidad" />
+        </label>
+
+        <button type="submit" class="primary-button" [disabled]="estado() === 'cargando' || estado() === 'guardando'">
+          Agregar
+        </button>
+      </form>
+
+      @if (estado() === 'cargando') {
+        <p class="empty-state">Cargando catalogo...</p>
+      } @else if (productosActivos().length === 0) {
+        <p class="empty-state">No hay productos activos para vender.</p>
+      } @else if (productosFiltrados().length === 0) {
+        <p class="empty-state">No hay productos que coincidan con la busqueda.</p>
+      }
+    </section>
+
+    <section class="pos-panel pos-panel--customer" aria-labelledby="clientes-title">
+      <div class="pos-panel__header">
+        <h3 id="clientes-title">Cliente</h3>
+        <span>Opcional</span>
+      </div>
+
+      <form class="customer-form" [formGroup]="clienteForm">
+        <label class="customer-form__full">
+          <span>Cliente existente</span>
+          <select formControlName="clienteId">
+            <option value="">Venta sin cliente</option>
+            @for (cliente of clientesActivos(); track cliente.id) {
+              <option [value]="cliente.id">
+                {{ cliente.nombreRazonSocial }} - {{ cliente.numeroDocumento || 'sin documento' }}
+              </option>
+            }
+          </select>
+        </label>
+
+        <label>
+          <span>Tipo doc.</span>
+          <select formControlName="tipoDocumento">
+            <option value="DNI">DNI</option>
+            <option value="RUC">RUC</option>
+            <option value="CE">CE</option>
+          </select>
+        </label>
+
+        <label>
+          <span>Numero</span>
+          <input type="text" formControlName="numeroDocumento" />
+        </label>
+
+        <label class="customer-form__full">
+          <span>Nombre o razon social</span>
+          <input type="text" formControlName="nombreRazonSocial" />
+        </label>
+
+        <label class="customer-form__full">
+          <span>Direccion</span>
+          <input type="text" formControlName="direccion" />
+        </label>
+
+        <button type="button" class="ghost-button customer-form__full" (click)="crearClienteRapido()" [disabled]="estado() === 'guardando'">
+          Agregar cliente
+        </button>
+      </form>
+    </section>
+
+    <section class="pos-panel pos-panel--sale" aria-labelledby="venta-title">
+      <div class="pos-panel__header">
+        <h3 id="venta-title">Venta</h3>
+        <span>{{ items().length }} items</span>
+      </div>
+
+      <form class="sale-date" [formGroup]="ventaForm">
+        <label>
+          <span>Fecha</span>
+          <input type="date" formControlName="fecha" />
+        </label>
+      </form>
+
+      @if (items().length === 0) {
+        <p class="empty-state">Agrega productos para registrar la venta.</p>
+      } @else {
+        <div class="sale-items" role="table" aria-label="Detalle de venta">
+          <div class="sale-items__row sale-items__row--head" role="row">
+            <span>Producto</span>
+            <span>Cant.</span>
+            <span>Total</span>
+            <span></span>
+          </div>
+
+          @for (item of items(); track item.producto.id) {
+            <div class="sale-items__row" role="row">
+              <span>{{ item.producto.nombre }}</span>
+              <span>{{ item.cantidad | number: '1.2-2' }}</span>
+              <span>S/ {{ calcularTotalItem(item) | number: '1.2-2' }}</span>
+              <button type="button" class="icon-button" (click)="quitarProducto(item.producto.id)" aria-label="Quitar producto">
+                x
+              </button>
+            </div>
+          }
+        </div>
+      }
+
+      <dl class="totals">
+        <div>
+          <dt>Subtotal</dt>
+          <dd>S/ {{ subtotal() | number: '1.2-2' }}</dd>
+        </div>
+        <div>
+          <dt>IGV</dt>
+          <dd>S/ {{ igv() | number: '1.2-2' }}</dd>
+        </div>
+        <div class="totals__grand">
+          <dt>Total</dt>
+          <dd>S/ {{ total() | number: '1.2-2' }}</dd>
+        </div>
+      </dl>
+
+      <div class="actions">
+        <button type="button" class="ghost-button" (click)="limpiarVenta()" [disabled]="items().length === 0 || estado() === 'guardando'">
+          Limpiar
+        </button>
+        <button type="button" class="primary-button" (click)="registrarVenta()" [disabled]="items().length === 0 || estado() === 'guardando'">
+          Registrar venta
+        </button>
+      </div>
+
+      @if (ultimaVenta(); as venta) {
+        <div class="sale-result" role="status">
+          <strong>Venta registrada</strong>
+          <span>{{ venta.id }}</span>
+          <span>Estado: {{ venta.estado }}</span>
+        </div>
+
+        <section class="cpe-emission" aria-labelledby="emision-title">
+          <div class="pos-panel__header">
+            <h3 id="emision-title">Comprobante</h3>
+            <span>{{ emisionEstado() }}</span>
+          </div>
+
+          <form class="emission-form" [formGroup]="emisionForm" (ngSubmit)="emitirComprobante()">
+            <label>
+              <span>Tipo</span>
+              <select formControlName="tipoComprobante">
+                <option value="03">Boleta</option>
+                <option value="01">Factura</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Serie</span>
+              <input type="text" maxlength="4" formControlName="serie" />
+            </label>
+
+            <label>
+              <span>Correlativo</span>
+              <input type="number" min="1" step="1" formControlName="correlativo" />
+            </label>
+
+            <label class="emission-form__wide">
+              <span>RUC emisor</span>
+              <input type="text" maxlength="11" formControlName="rucEmisor" />
+            </label>
+
+            <button type="submit" class="primary-button emission-form__wide" [disabled]="emisionEstado() === 'emitiendo'">
+              Emitir comprobante
+            </button>
+          </form>
+
+          @if (emisionMensaje()) {
+            <p class="emission-status" [class.emission-status--success]="emisionEstado() === 'exito'" [class.emission-status--rejected]="emisionEstado() === 'rechazo'" [class.emission-status--error]="emisionEstado() === 'error' || emisionEstado() === 'error-validacion'">
+              {{ emisionMensaje() }}
+            </p>
+          }
+
+          @if (emisionRespuesta(); as respuesta) {
+            <dl class="emission-details">
+              <div>
+                <dt>Estado CPE</dt>
+                <dd>{{ respuesta.estado }}</dd>
+              </div>
+              <div>
+                <dt>Comprobante</dt>
+                <dd>{{ respuesta.comprobante || 'No informado' }}</dd>
+              </div>
+              <div>
+                <dt>XML</dt>
+                <dd>{{ respuesta.nombreXml || 'No generado' }}</dd>
+              </div>
+              <div>
+                <dt>ZIP</dt>
+                <dd>{{ respuesta.nombreZip || 'No generado' }}</dd>
+              </div>
+              <div>
+                <dt>CDR</dt>
+                <dd>{{ respuesta.nombreCdr || 'No generado' }}</dd>
+              </div>
+            </dl>
+          }
+
+          @if (emisionErrores().length > 0) {
+            <ul class="emission-errors" aria-label="Errores de emision">
+              @for (error of emisionErrores(); track error) {
+                <li>{{ error }}</li>
+              }
+            </ul>
+          }
+        </section>
+      }
+    </section>
+  </div>
+</section>
