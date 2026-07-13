@@ -1,0 +1,136 @@
+<section class="config-page">
+  <header class="config-page__header">
+    <div>
+      <h2>Configuración fiscal</h2>
+      <p>Datos fiscales de la empresa activa usados para emitir comprobantes desde ventas.</p>
+    </div>
+
+    <button type="button" class="ghost-button" (click)="cargarConfiguracion()" [disabled]="estado() === 'cargando' || estado() === 'guardando'">
+      Actualizar
+    </button>
+  </header>
+
+  @if (mensaje()) {
+    <p class="status-message" role="status">{{ mensaje() }}</p>
+  }
+
+  <div class="config-layout">
+    <section class="config-panel" aria-labelledby="configuracion-fiscal-title">
+      <div class="config-panel__header">
+        <h3 id="configuracion-fiscal-title">Datos fiscales</h3>
+        <span>{{ configuracion() ? (configuracion()?.activa ? 'Activa' : 'Inactiva') : 'Pendiente' }}</span>
+      </div>
+
+      <form class="config-form" [formGroup]="configuracionForm" (ngSubmit)="guardarConfiguracion()">
+        <label>
+          <span>RUC</span>
+          <input type="text" inputmode="numeric" maxlength="11" formControlName="ruc" />
+        </label>
+
+        <label>
+          <span>Ubigeo</span>
+          <input type="text" inputmode="numeric" maxlength="6" formControlName="ubigeo" />
+        </label>
+
+        <label class="config-form__full">
+          <span>Razón social</span>
+          <input type="text" maxlength="200" formControlName="razonSocial" />
+        </label>
+
+        <label class="config-form__full">
+          <span>Nombre comercial</span>
+          <input type="text" maxlength="200" formControlName="nombreComercial" />
+        </label>
+
+        <label class="config-form__full">
+          <span>Dirección</span>
+          <input type="text" maxlength="250" formControlName="direccion" />
+        </label>
+
+        <label>
+          <span>Departamento</span>
+          <input type="text" maxlength="100" formControlName="departamento" />
+        </label>
+
+        <label>
+          <span>Provincia</span>
+          <input type="text" maxlength="100" formControlName="provincia" />
+        </label>
+
+        <label>
+          <span>Distrito</span>
+          <input type="text" maxlength="100" formControlName="distrito" />
+        </label>
+
+        <label class="check-field">
+          <input type="checkbox" formControlName="activa" />
+          <span>Configuración activa</span>
+        </label>
+
+        @if (configuracionForm.invalid && configuracionForm.touched) {
+          <div class="form-errors" role="alert">
+            @if (configuracionForm.controls.ruc.invalid) {
+              <span>El RUC es obligatorio y debe tener 11 dígitos.</span>
+            }
+            @if (configuracionForm.controls.ubigeo.invalid) {
+              <span>El ubigeo es obligatorio y debe tener 6 dígitos.</span>
+            }
+            @if (configuracionForm.controls.razonSocial.invalid) {
+              <span>La razón social es obligatoria.</span>
+            }
+            @if (configuracionForm.controls.direccion.invalid) {
+              <span>La dirección es obligatoria.</span>
+            }
+            @if (configuracionForm.controls.departamento.invalid || configuracionForm.controls.provincia.invalid || configuracionForm.controls.distrito.invalid) {
+              <span>Departamento, provincia y distrito son obligatorios.</span>
+            }
+          </div>
+        }
+
+        <button type="submit" class="primary-button config-form__full" [disabled]="estado() === 'guardando'">
+          {{ estado() === 'guardando' ? 'Guardando...' : 'Guardar configuración fiscal' }}
+        </button>
+      </form>
+    </section>
+
+    <aside class="config-panel config-panel--summary" aria-labelledby="resumen-fiscal-title">
+      <div class="config-panel__header">
+        <h3 id="resumen-fiscal-title">Resumen</h3>
+        <span>Empresa activa</span>
+      </div>
+
+      @if (estado() === 'cargando') {
+        <p class="empty-state">Cargando configuración fiscal...</p>
+      } @else if (configuracion(); as configuracionFiscal) {
+        <dl class="summary-list">
+          <div>
+            <dt>RUC</dt>
+            <dd>{{ configuracionFiscal.ruc }}</dd>
+          </div>
+          <div>
+            <dt>Razón social</dt>
+            <dd>{{ configuracionFiscal.razonSocial }}</dd>
+          </div>
+          <div>
+            <dt>Nombre comercial</dt>
+            <dd>{{ configuracionFiscal.nombreComercial || 'No informado' }}</dd>
+          </div>
+          <div>
+            <dt>Dirección fiscal</dt>
+            <dd>{{ configuracionFiscal.direccion }}</dd>
+          </div>
+          <div>
+            <dt>Ubicación</dt>
+            <dd>{{ configuracionFiscal.departamento }} / {{ configuracionFiscal.provincia }} / {{ configuracionFiscal.distrito }}</dd>
+          </div>
+          <div>
+            <dt>Estado</dt>
+            <dd>{{ configuracionFiscal.activa ? 'Activa' : 'Inactiva' }}</dd>
+          </div>
+        </dl>
+      } @else {
+        <p class="empty-state">Aún no hay configuración fiscal guardada para esta empresa.</p>
+      }
+    </aside>
+  </div>
+</section>
