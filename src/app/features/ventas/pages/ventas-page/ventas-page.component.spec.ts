@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
+import { vi } from 'vitest';
 
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
 import { ApiResponse } from '../../../cpe/models/api-response.model';
@@ -9,7 +10,7 @@ import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
 import { CrearVentaRequest, EmitirCpeDesdeVentaRequest, VentaResponse } from '../../models/venta.model';
-import { VentasPageComponent } from './ventas-page.component';
+import { obtenerFechaActualLima, VentasPageComponent } from './ventas-page.component';
 
 describe('VentasPageComponent', () => {
   let fixture: ComponentFixture<VentasPageComponent>;
@@ -37,6 +38,10 @@ describe('VentasPageComponent', () => {
     }).compileComponents();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   async function crearComponente(): Promise<void> {
     fixture = TestBed.createComponent(VentasPageComponent);
     component = fixture.componentInstance;
@@ -50,6 +55,24 @@ describe('VentasPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Polo');
     expect(fixture.nativeElement.textContent).toContain('Cliente Test');
+  });
+
+  it('calculates the default sale date with Lima timezone when UTC is already the next day', () => {
+    const fechaUtcDiaSiguiente = new Date('2026-07-13T02:30:00.000Z');
+
+    expect(obtenerFechaActualLima(fechaUtcDiaSiguiente)).toBe('2026-07-12');
+  });
+
+  it('shows Lima date in the sale date form by default', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T02:30:00.000Z'));
+
+    await crearComponente();
+
+    const fechaInput = fixture.nativeElement.querySelector('input[type="date"]') as HTMLInputElement;
+
+    expect(component['ventaForm'].controls.fecha.value).toBe('2026-07-12');
+    expect(fechaInput.value).toBe('2026-07-12');
   });
 
   it('shows a clear path to create products when the catalog is empty', async () => {

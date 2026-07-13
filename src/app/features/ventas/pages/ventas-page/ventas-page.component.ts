@@ -427,8 +427,22 @@ export class VentasPageComponent implements OnInit {
   }
 
   private obtenerFechaActual(): string {
-    return new Date().toISOString().slice(0, 10);
+    return obtenerFechaActualLima();
   }
+}
+
+export function obtenerFechaActualLima(fecha = new Date()): string {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(fecha);
+  const year = partes.find((parte) => parte.type === 'year')?.value;
+  const month = partes.find((parte) => parte.type === 'month')?.value;
+  const day = partes.find((parte) => parte.type === 'day')?.value;
+
+  return `${year}-${month}-${day}`;
 }
 
 function redondear(valor: number): number {
