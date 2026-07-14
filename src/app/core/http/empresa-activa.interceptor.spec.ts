@@ -40,6 +40,17 @@ describe('empresaActivaInterceptor', () => {
     request.flush({});
   });
 
+  it('adds X-CapitalPos-EmpresaId in /api/stock endpoints', () => {
+    empresaActivaService.establecerEmpresaActiva('empresa-1');
+
+    http.put('/api/stock/ajustar', {}).subscribe();
+
+    const request = httpTestingController.expectOne('/api/stock/ajustar');
+    expect(request.request.headers.get('X-CapitalPos-EmpresaId')).toBe('empresa-1');
+    expect(request.request.headers.has('X-API-KEY')).toBe(false);
+    request.flush({});
+  });
+
   it('does not add X-CapitalPos-EmpresaId in /api/health', () => {
     empresaActivaService.establecerEmpresaActiva('empresa-1');
 

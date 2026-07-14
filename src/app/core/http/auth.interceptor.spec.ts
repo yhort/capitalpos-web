@@ -53,6 +53,15 @@ describe('authInterceptor', () => {
     request.flush({});
   });
 
+  it('adds Authorization in /api/stock endpoints', () => {
+    http.get('/api/stock/productos/producto-1').subscribe();
+
+    const request = httpTestingController.expectOne('/api/stock/productos/producto-1');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer jwt-test');
+    expect(request.request.headers.has('X-API-KEY')).toBe(false);
+    request.flush({});
+  });
+
   it('does not add Authorization in /api/health', () => {
     http.get('/api/health').subscribe();
 

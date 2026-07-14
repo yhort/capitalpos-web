@@ -1,0 +1,125 @@
+<section class="inventory-page">
+  <header class="inventory-page__header">
+    <div>
+      <h2>Inventario</h2>
+      <p>Consulta y ajusta stock básico por producto de la empresa activa.</p>
+    </div>
+
+    <button type="button" class="ghost-button" (click)="cargarProductos()" [disabled]="estado() === 'cargando' || estado() === 'consultando' || estado() === 'ajustando'">
+      Actualizar productos
+    </button>
+  </header>
+
+  @if (mensaje()) {
+    <p
+      class="status-message"
+      role="status"
+      [class.status-message--error]="estado() === 'error' || estado() === 'error-validacion'"
+      [class.status-message--success]="mensaje().includes('correctamente')"
+    >
+      {{ mensaje() }}
+    </p>
+  }
+
+  <div class="inventory-layout">
+    <section class="inventory-panel" aria-labelledby="consulta-stock-title">
+      <div class="inventory-panel__header">
+        <h3 id="consulta-stock-title">Consulta de stock</h3>
+        <span>{{ productosActivos().length }} productos activos</span>
+      </div>
+
+      <form class="stock-form" [formGroup]="consultaForm" (ngSubmit)="consultarStock()">
+        <label class="stock-form__full">
+          <span>Producto</span>
+          <input type="text" list="productos-inventario" formControlName="productoId" placeholder="Selecciona o ingresa el ID del producto" />
+          <datalist id="productos-inventario">
+            @for (producto of productosActivos(); track producto.id) {
+              <option [value]="producto.id">{{ producto.nombre }} - {{ producto.codigoSku || 'sin SKU' }}</option>
+            }
+          </datalist>
+        </label>
+
+        <label class="stock-form__full">
+          <span>Variante opcional</span>
+          <input type="text" formControlName="productoVarianteId" placeholder="ID de variante si aplica" />
+        </label>
+
+        @if (productoSeleccionado(); as producto) {
+          <p class="selected-product">
+            {{ producto.nombre }} · {{ producto.codigoSku || 'sin SKU' }}
+          </p>
+        }
+
+        @if (consultaForm.invalid && consultaForm.touched) {
+          <div class="form-errors" role="alert">
+            <span>El producto es obligatorio para consultar o ajustar stock.</span>
+          </div>
+        }
+
+        <button type="submit" class="primary-button stock-form__full" [disabled]="estado() === 'consultando' || estado() === 'ajustando'">
+          {{ estado() === 'consultando' ? 'Consultando...' : 'Consultar stock' }}
+        </button>
+      </form>
+
+      @if (estado() === 'cargando') {
+        <p class="empty-state">Cargando productos...</p>
+      } @else if (productosActivos().length === 0) {
+        <p class="empty-state">No hay productos activos para consultar stock.</p>
+      }
+    </section>
+
+    <section class="inventory-panel" aria-labelledby="resultado-stock-title">
+      <div class="inventory-panel__header">
+        <h3 id="resultado-stock-title">Stock disponible</h3>
+        <span>{{ stock() ? 'Consultado' : 'Sin consulta' }}</span>
+      </div>
+
+      @if (stock(); as stockActual) {
+        <dl class="stock-summary">
+          <div>
+            <dt>Cantidad disponible</dt>
+            <dd>{{ stockActual.cantidadDisponible | number: '1.0-3' }}</dd>
+          </div>
+          <div>
+            <dt>Cantidad reservada</dt>
+            <dd>{{ stockActual.cantidadReservada | number: '1.0-3' }}</dd>
+          </div>
+          <div class="stock-summary__free">
+            <dt>Stock libre</dt>
+            <dd>{{ stockActual.stockLibre | number: '1.0-3' }}</dd>
+          </div>
+          <div>
+            <dt>Fecha actualización</dt>
+            <dd>{{ stockActual.fechaActualizacion }}</dd>
+          </div>
+        </dl>
+      } @else {
+        <p class="empty-state">Consulta un producto para ver su stock.</p>
+      }
+    </section>
+
+    <section class="inventory-panel" aria-labelledby="ajuste-stock-title">
+      <div class="inventory-panel__header">
+        <h3 id="ajuste-stock-title">Ajuste de stock</h3>
+        <span>Manual</span>
+      </div>
+
+      <form class="stock-form" [formGroup]="ajusteForm" (ngSubmit)="ajustarStock()">
+        <label class="stock-form__full">
+          <span>Nueva cantidad disponible</span>
+          <input type="number" min="0" step="0.001" formControlName="cantidadDisponible" />
+        </label>
+
+        @if (ajusteForm.invalid && ajusteForm.touched) {
+          <div class="form-errors" role="alert">
+            <span>La cantidad disponible no puede ser negativa.</span>
+          </div>
+        }
+
+        <button type="submit" class="primary-button stock-form__full" [disabled]="estado() === 'consultando' || estado() === 'ajustando'">
+          {{ estado() === 'ajustando' ? 'Ajustando...' : 'Ajustar stock' }}
+        </button>
+      </form>
+    </section>
+  </div>
+</section>
