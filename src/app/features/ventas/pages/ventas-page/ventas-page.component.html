@@ -33,7 +33,7 @@
             <option value="">Seleccionar</option>
             @for (producto of productosFiltrados(); track producto.id) {
               <option [value]="producto.id">
-                {{ producto.nombre }} - S/ {{ producto.precioVenta | number: '1.2-2' }}
+                {{ producto.nombre }} - S/ {{ producto.precioVenta | number: '1.2-2' }} - {{ obtenerTextoStock(producto.id) }}
               </option>
             }
           </select>
@@ -44,13 +44,49 @@
           <input type="number" min="0.01" step="0.01" formControlName="cantidad" />
         </label>
 
-        <button type="submit" class="primary-button" [disabled]="estado() === 'cargando' || estado() === 'guardando' || productosActivos().length === 0">
+        <button type="submit" class="primary-button" [disabled]="estado() === 'cargando' || estado() === 'guardando' || productosActivos().length === 0 || (!!productoForm.controls.productoId.value && !puedeAgregarProducto(productoForm.controls.productoId.value))">
           Agregar
         </button>
       </form>
 
+      @if (productosFiltrados().length > 0) {
+        <div class="catalog-stock" aria-label="Stock de productos">
+          @for (producto of productosFiltrados(); track producto.id) {
+            <div class="catalog-stock__item" [class.catalog-stock__item--blocked]="!puedeAgregarProducto(producto.id)">
+              <div>
+                <strong>{{ producto.nombre }}</strong>
+                <span>{{ producto.codigoSku || 'sin SKU' }}</span>
+              </div>
+
+              @if (obtenerStock(producto.id); as stockEstado) {
+                @if (stockEstado.estado === 'disponible') {
+                  <dl>
+                    <div>
+                      <dt>Disp.</dt>
+                      <dd>{{ stockEstado.stock.cantidadDisponible | number: '1.0-3' }}</dd>
+                    </div>
+                    <div>
+                      <dt>Res.</dt>
+                      <dd>{{ stockEstado.stock.cantidadReservada | number: '1.0-3' }}</dd>
+                    </div>
+                    <div>
+                      <dt>Libre</dt>
+                      <dd>{{ stockEstado.stock.stockLibre | number: '1.0-3' }}</dd>
+                    </div>
+                  </dl>
+                } @else {
+                  <p>{{ obtenerTextoStock(producto.id) }}</p>
+                }
+              } @else {
+                <p>Stock no disponible para este producto.</p>
+              }
+            </div>
+          }
+        </div>
+      }
+
       @if (estado() === 'cargando') {
-        <p class="empty-state">Cargando catalogo...</p>
+        <p class="empty-state">Cargando catalogo y stock...</p>
       } @else if (productosActivos().length === 0) {
         <div class="empty-state empty-state--action">
           <p>No hay productos activos para vender.</p>
@@ -137,6 +173,7 @@
           <div class="sale-items__row sale-items__row--head" role="row">
             <span>Producto</span>
             <span>Cant.</span>
+            <span>Stock libre</span>
             <span>Total</span>
             <span></span>
           </div>
@@ -145,6 +182,7 @@
             <div class="sale-items__row" role="row">
               <span>{{ item.producto.nombre }}</span>
               <span>{{ item.cantidad | number: '1.2-2' }}</span>
+              <span>{{ obtenerStockLibre(item.producto.id) === null ? 'No disponible' : (obtenerStockLibre(item.producto.id) | number: '1.0-3') }}</span>
               <span>S/ {{ calcularTotalItem(item) | number: '1.2-2' }}</span>
               <button type="button" class="icon-button" (click)="quitarProducto(item.producto.id)" aria-label="Quitar producto">
                 x

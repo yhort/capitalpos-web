@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, map, of } from 'rxjs';
 
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
 import { ApiResponse } from '../../../cpe/models/api-response.model';
@@ -14,6 +14,8 @@ import {
   obtenerMensajesEmisionCpe,
   resolverErrorHttpEmisionCpe,
 } from '../../../cpe/pages/emitir-cpe-page/emitir-cpe-page.component';
+import { StockApiService } from '../../../inventario/data-access/stock-api.service';
+import { StockProductoResponse } from '../../../inventario/models/stock.model';
 import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse, CrearClienteRequest } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
@@ -23,6 +25,16 @@ interface PosItem {
   readonly producto: ProductoResponse;
   readonly cantidad: number;
 }
+
+type StockProductoEstado =
+  | {
+      readonly estado: 'cargando' | 'no-disponible';
+      readonly stock: null;
+    }
+  | {
+      readonly estado: 'disponible';
+      readonly stock: StockProductoResponse;
+    };
 
 type PosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
 type EstadoEmisionVenta = 'sin-emitir' | 'emitiendo' | EmisionCpeEstado;
@@ -37,6 +49,7 @@ const IGV = 0.18;
 })
 export class VentasPageComponent implements OnInit {
   private readonly posApi = inject(PosApiService);
+  private readonly stockApi = inject(StockApiService);
   private readonly empresaActivaService = inject(EmpresaActivaService);
   private readonly formBuilder = inject(FormBuilder);
 
@@ -44,6 +57,7 @@ export class VentasPageComponent implements OnInit {
   protected readonly mensaje = signal('');
   protected readonly busquedaProducto = signal('');
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
+  protected readonly stockProductos = signal<Readonly<Record<string, StockProductoEstado>>>({});
   protected readonly clientes = signal<readonly ClienteResponse[]>([]);
   protected readonly items = signal<readonly PosItem[]>([]);
   protected readonly ultimaVenta = signal<VentaResponse | null>(null);
@@ -134,8 +148,7 @@ export class VentasPageComponent implements OnInit {
       next: ({ productos, clientes }) => {
         this.productos.set(productos);
         this.clientes.set(clientes);
-        this.estado.set('listo');
-        this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados.' : '');
+        this.cargarStockProductos(productos, mostrarMensaje);
       },
       error: (error: unknown) => {
         this.estado.set('error');
@@ -160,6 +173,27 @@ export class VentasPageComponent implements OnInit {
 
     if (!producto) {
       this.mensaje.set('Selecciona un producto activo.');
+      return;
+    }
+
+    const stockLibre = this.obtenerStockLibre(producto.id);
+
+    if (stockLibre === null) {
+      this.mensaje.set('Stock no disponible para este producto.');
+      return;
+    }
+
+    if (stockLibre <= 0) {
+      this.mensaje.set('Sin stock disponible.');
+      return;
+    }
+
+    const cantidadEnCarrito = this.items()
+      .filter((item) => item.producto.id === producto.id)
+      .reduce((total, item) => total + item.cantidad, 0);
+
+    if (redondear(cantidadEnCarrito + cantidad) > stockLibre) {
+      this.mensaje.set('Stock insuficiente para la cantidad solicitada.');
       return;
     }
 
@@ -252,6 +286,7 @@ export class VentasPageComponent implements OnInit {
     }
 
     const request = this.construirVentaRequest();
+    const productoIdsVendidos = [...new Set(this.items().map((item) => item.producto.id))];
     this.estado.set('guardando');
     this.mensaje.set('');
 
@@ -260,6 +295,7 @@ export class VentasPageComponent implements OnInit {
         this.ultimaVenta.set(venta);
         this.items.set([]);
         this.limpiarResultadoEmision();
+        this.refrescarStockProductos(productoIdsVendidos);
         this.estado.set('listo');
         this.mensaje.set(`Venta registrada correctamente. ID: ${venta.id}. Total: S/ ${venta.total.toFixed(2)}.`);
       },
@@ -332,6 +368,38 @@ export class VentasPageComponent implements OnInit {
     return redondear(item.cantidad * item.producto.precioVenta);
   }
 
+  protected obtenerStock(productoId: string): StockProductoEstado | null {
+    return this.stockProductos()[productoId] ?? null;
+  }
+
+  protected obtenerStockLibre(productoId: string): number | null {
+    const stock = this.obtenerStock(productoId);
+    return stock?.estado === 'disponible' ? stock.stock.stockLibre : null;
+  }
+
+  protected obtenerTextoStock(productoId: string): string {
+    const stock = this.obtenerStock(productoId);
+
+    if (!stock || stock.estado === 'cargando') {
+      return 'Consultando stock...';
+    }
+
+    if (stock.estado !== 'disponible') {
+      return 'Stock no disponible para este producto.';
+    }
+
+    if (stock.stock.stockLibre <= 0) {
+      return 'Sin stock disponible';
+    }
+
+    return `Stock libre: ${formatearCantidad(stock.stock.stockLibre)}`;
+  }
+
+  protected puedeAgregarProducto(productoId: string): boolean {
+    const stockLibre = this.obtenerStockLibre(productoId);
+    return stockLibre !== null && stockLibre > 0;
+  }
+
   private construirVentaRequest(): CrearVentaRequest {
     return {
       fecha: this.ventaForm.controls.fecha.value
@@ -381,6 +449,99 @@ export class VentasPageComponent implements OnInit {
     this.emisionMensaje.set('');
     this.emisionRespuesta.set(null);
     this.emisionErrores.set([]);
+  }
+
+  private cargarStockProductos(
+    productos: readonly ProductoResponse[],
+    mostrarMensaje: boolean,
+  ): void {
+    const productosActivos = productos.filter((producto) => producto.activo);
+
+    if (productosActivos.length === 0) {
+      this.stockProductos.set({});
+      this.estado.set('listo');
+      this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados.' : '');
+      return;
+    }
+
+    this.stockProductos.set(Object.fromEntries(
+      productosActivos.map((producto) => [
+        producto.id,
+        {
+          estado: 'cargando',
+          stock: null,
+        } satisfies StockProductoEstado,
+      ]),
+    ));
+
+    forkJoin(
+      productosActivos.map((producto) =>
+        this.stockApi.obtenerStockProducto(producto.id).pipe(
+          map((stock) => [
+            producto.id,
+            {
+              estado: 'disponible',
+              stock,
+            } satisfies StockProductoEstado,
+          ] as const),
+          catchError(() => of([
+            producto.id,
+            {
+              estado: 'no-disponible',
+              stock: null,
+            } satisfies StockProductoEstado,
+          ] as const)),
+        ),
+      ),
+    ).subscribe((stockEntries) => {
+      this.stockProductos.set(Object.fromEntries(stockEntries));
+      this.estado.set('listo');
+      this.mensaje.set(mostrarMensaje ? 'Productos, clientes y stock actualizados.' : '');
+    });
+  }
+
+  private refrescarStockProductos(productoIds: readonly string[]): void {
+    if (productoIds.length === 0) {
+      return;
+    }
+
+    const stockActual = this.stockProductos();
+    this.stockProductos.set({
+      ...stockActual,
+      ...Object.fromEntries(productoIds.map((productoId) => [
+        productoId,
+        {
+          estado: 'cargando',
+          stock: null,
+        } satisfies StockProductoEstado,
+      ])),
+    });
+
+    forkJoin(
+      productoIds.map((productoId) =>
+        this.stockApi.obtenerStockProducto(productoId).pipe(
+          map((stock) => [
+            productoId,
+            {
+              estado: 'disponible',
+              stock,
+            } satisfies StockProductoEstado,
+          ] as const),
+          catchError(() => of([
+            productoId,
+            {
+              estado: 'no-disponible',
+              stock: null,
+            } satisfies StockProductoEstado,
+          ] as const)),
+        ),
+      ),
+    ).subscribe((stockEntries) => {
+      this.stockProductos.update((stockPorProducto) => ({
+        ...stockPorProducto,
+        ...Object.fromEntries(stockEntries),
+      }));
+    });
   }
 
   private obtenerMensajeError(error: unknown, fallback: string): string {
@@ -447,6 +608,13 @@ export function obtenerFechaActualLima(fecha = new Date()): string {
 
 function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
+}
+
+function formatearCantidad(valor: number): string {
+  return new Intl.NumberFormat('es-PE', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  }).format(valor);
 }
 
 function normalizarTextoNullable(valor: string): string | null {

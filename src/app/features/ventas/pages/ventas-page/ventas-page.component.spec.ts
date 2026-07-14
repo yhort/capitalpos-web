@@ -1,11 +1,14 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
 import { ApiResponse } from '../../../cpe/models/api-response.model';
 import { CpeEmisionResponse } from '../../../cpe/models/cpe-emision-response.model';
+import { StockApiService } from '../../../inventario/data-access/stock-api.service';
+import { StockProductoResponse } from '../../../inventario/models/stock.model';
 import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
@@ -16,9 +19,11 @@ describe('VentasPageComponent', () => {
   let fixture: ComponentFixture<VentasPageComponent>;
   let component: VentasPageComponent;
   let posApi: PosApiServiceFake;
+  let stockApi: StockApiServiceFake;
 
   beforeEach(async () => {
     posApi = new PosApiServiceFake();
+    stockApi = new StockApiServiceFake();
 
     await TestBed.configureTestingModule({
       imports: [VentasPageComponent],
@@ -26,6 +31,10 @@ describe('VentasPageComponent', () => {
         {
           provide: PosApiService,
           useValue: posApi,
+        },
+        {
+          provide: StockApiService,
+          useValue: stockApi,
         },
         {
           provide: EmpresaActivaService,
@@ -55,6 +64,16 @@ describe('VentasPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Polo');
     expect(fixture.nativeElement.textContent).toContain('Cliente Test');
+  });
+
+  it('shows product stock in the POS catalog', async () => {
+    await crearComponente();
+
+    const textContent = fixture.nativeElement.textContent;
+
+    expect(stockApi.obtenerStockProductoCalls.get('producto-1')).toBe(1);
+    expect(textContent).toContain('Stock libre');
+    expect(textContent).toContain('5');
   });
 
   it('calculates the default sale date with Lima timezone when UTC is already the next day', () => {
@@ -118,6 +137,104 @@ describe('VentasPageComponent', () => {
     expect(component['mensaje']()).toContain('Venta registrada correctamente.');
   });
 
+  it('does not add products without free stock', async () => {
+    stockApi.stocks.set('producto-1', crearStockResponse({
+      cantidadDisponible: 0,
+      cantidadReservada: 0,
+      stockLibre: 0,
+    }));
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('Sin stock disponible.');
+  });
+
+  it('does not add products when requested quantity is greater than free stock', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 6,
+    });
+
+    component['agregarProducto']();
+
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('Stock insuficiente para la cantidad solicitada.');
+  });
+
+  it('does not sell products when stock could not be loaded', async () => {
+    stockApi.productosConError.add('producto-1');
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('Stock no disponible para este producto.');
+  });
+
+  it('does not discount stock locally when adding products to the cart', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 2,
+    });
+
+    component['agregarProducto']();
+
+    expect(component['items']().length).toBe(1);
+    expect(component['obtenerStockLibre']('producto-1')).toBe(5);
+  });
+
+  it('refreshes sold product stock after registering a sale successfully', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 2,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(stockApi.obtenerStockProductoCalls.get('producto-1')).toBe(2);
+    expect(component['items']()).toEqual([]);
+  });
+
+  it('shows backend stock errors without clearing the cart', async () => {
+    await crearComponente();
+    posApi.crearVentaError = new HttpErrorResponse({
+      status: 400,
+      error: {
+        mensaje: 'Stock insuficiente para la cantidad solicitada.',
+      },
+    });
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 2,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(component['items']().length).toBe(1);
+    expect(component['mensaje']()).toBe('Stock insuficiente para la cantidad solicitada.');
+  });
+
   it('does not register twice while a sale is already being saved', async () => {
     await crearComponente();
 
@@ -164,6 +281,7 @@ class PosApiServiceFake {
   ultimaVentaRequest: CrearVentaRequest | null = null;
   ultimaEmisionVentaId: string | null = null;
   ultimaEmisionRequest: EmitirCpeDesdeVentaRequest | null = null;
+  crearVentaError: HttpErrorResponse | null = null;
   productos: readonly ProductoResponse[] = [
     {
       id: 'producto-1',
@@ -205,6 +323,10 @@ class PosApiServiceFake {
   crearVenta(request: CrearVentaRequest) {
     this.ultimaVentaRequest = request;
 
+    if (this.crearVentaError) {
+      return throwError(() => this.crearVentaError);
+    }
+
     return of<VentaResponse>({
       id: 'venta-1',
       empresaId: 'empresa-1',
@@ -241,4 +363,38 @@ class PosApiServiceFake {
       errores: [],
     });
   }
+}
+
+class StockApiServiceFake {
+  readonly productosConError = new Set<string>();
+  readonly obtenerStockProductoCalls = new Map<string, number>();
+  readonly stocks = new Map<string, StockProductoResponse>([
+    ['producto-1', crearStockResponse()],
+  ]);
+
+  obtenerStockProducto(productoId: string) {
+    this.obtenerStockProductoCalls.set(
+      productoId,
+      (this.obtenerStockProductoCalls.get(productoId) ?? 0) + 1,
+    );
+
+    if (this.productosConError.has(productoId)) {
+      return throwError(() => new HttpErrorResponse({ status: 404 }));
+    }
+
+    return of(this.stocks.get(productoId) ?? crearStockResponse({ productoId }));
+  }
+}
+
+function crearStockResponse(overrides: Partial<StockProductoResponse> = {}): StockProductoResponse {
+  return {
+    empresaId: 'empresa-1',
+    productoId: 'producto-1',
+    productoVarianteId: null,
+    cantidadDisponible: 5,
+    cantidadReservada: 0,
+    stockLibre: 5,
+    fechaActualizacion: '2026-07-14T10:00:00Z',
+    ...overrides,
+  };
 }
