@@ -4,9 +4,21 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { ProductosApiService } from '../../data-access/productos-api.service';
-import { CrearProductoRequest, ProductoResponse } from '../../models/producto.model';
+import {
+  CrearProductoRequest,
+  CrearProductoVarianteRequest,
+  ProductoResponse,
+  ProductoVarianteResponse,
+} from '../../models/producto.model';
 
 type ProductosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
+type VariantesEstado = 'sin-cargar' | 'cargando' | 'listo' | 'guardando' | 'error';
+
+interface VariantesProductoState {
+  readonly estado: VariantesEstado;
+  readonly variantes: readonly ProductoVarianteResponse[];
+  readonly mensaje: string;
+}
 
 @Component({
   selector: 'app-productos-page',
@@ -21,6 +33,8 @@ export class ProductosPageComponent implements OnInit {
   protected readonly estado = signal<ProductosEstado>('cargando');
   protected readonly mensaje = signal('');
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
+  protected readonly variantesPorProducto = signal<Readonly<Record<string, VariantesProductoState>>>({});
+  protected readonly productoExpandidoId = signal<string | null>(null);
   protected readonly busqueda = signal('');
 
   protected readonly productoForm = this.formBuilder.nonNullable.group({
@@ -29,6 +43,13 @@ export class ProductosPageComponent implements OnInit {
     codigoSku: ['', Validators.maxLength(80)],
     codigoBarras: ['', Validators.maxLength(80)],
     costo: [null as number | null, Validators.min(0)],
+  });
+
+  protected readonly varianteForm = this.formBuilder.nonNullable.group({
+    talla: ['', Validators.maxLength(50)],
+    color: ['', Validators.maxLength(80)],
+    codigoSku: ['', [Validators.required, Validators.maxLength(80)]],
+    codigoBarras: ['', Validators.maxLength(80)],
   });
 
   protected readonly productosFiltrados = computed(() => {
@@ -88,6 +109,11 @@ export class ProductosPageComponent implements OnInit {
           codigoBarras: '',
           costo: null,
         });
+        this.productoExpandidoId.set(producto.id);
+        this.variantesPorProducto.update((variantesPorProducto) => ({
+          ...variantesPorProducto,
+          [producto.id]: crearVariantesState(),
+        }));
         this.estado.set('listo');
         this.mensaje.set(`Producto ${producto.nombre} creado.`);
       },
@@ -103,6 +129,95 @@ export class ProductosPageComponent implements OnInit {
     this.busqueda.set(target instanceof HTMLInputElement ? target.value : '');
   }
 
+  protected alternarVariantes(producto: ProductoResponse): void {
+    const estaExpandido = this.productoExpandidoId() === producto.id;
+
+    this.productoExpandidoId.set(estaExpandido ? null : producto.id);
+
+    if (!estaExpandido && this.obtenerVariantesState(producto.id).estado === 'sin-cargar') {
+      this.cargarVariantes(producto.id);
+    }
+  }
+
+  protected cargarVariantes(productoId: string): void {
+    this.actualizarVariantesState(productoId, {
+      estado: 'cargando',
+      mensaje: '',
+    });
+
+    this.productosApi.listarVariantes(productoId).subscribe({
+      next: (variantes) => {
+        this.actualizarVariantesState(productoId, {
+          estado: 'listo',
+          variantes,
+          mensaje: '',
+        });
+      },
+      error: (error: unknown) => {
+        this.actualizarVariantesState(productoId, {
+          estado: 'error',
+          mensaje: this.obtenerMensajeError(error, 'No se pudieron cargar las variantes.'),
+        });
+      },
+    });
+  }
+
+  protected crearVariante(producto: ProductoResponse): void {
+    this.varianteForm.markAllAsTouched();
+
+    if (this.varianteForm.invalid) {
+      this.mensaje.set('Revisa los datos de la variante antes de guardar.');
+      return;
+    }
+
+    const request = this.construirCrearVarianteRequest(producto.id);
+    this.actualizarVariantesState(producto.id, {
+      estado: 'guardando',
+      mensaje: '',
+    });
+
+    this.productosApi.crearVariante(producto.id, request).subscribe({
+      next: (variante) => {
+        this.actualizarVariantesState(producto.id, {
+          estado: 'listo',
+          variantes: [variante, ...this.obtenerVariantesState(producto.id).variantes],
+          mensaje: `Variante ${variante.codigoSku || variante.id} creada.`,
+        });
+        this.varianteForm.reset({
+          talla: '',
+          color: '',
+          codigoSku: '',
+          codigoBarras: '',
+        });
+        this.mensaje.set(`Variante ${variante.codigoSku || variante.id} creada.`);
+      },
+      error: (error: unknown) => {
+        const mensaje = this.obtenerMensajeError(error, 'No se pudo crear la variante.');
+        this.actualizarVariantesState(producto.id, {
+          estado: 'listo',
+          mensaje,
+        });
+        this.mensaje.set(mensaje);
+      },
+    });
+  }
+
+  protected activarVariante(productoId: string, varianteId: string): void {
+    this.cambiarEstadoVariante(productoId, varianteId, true);
+  }
+
+  protected desactivarVariante(productoId: string, varianteId: string): void {
+    this.cambiarEstadoVariante(productoId, varianteId, false);
+  }
+
+  protected obtenerVariantesState(productoId: string): VariantesProductoState {
+    return this.variantesPorProducto()[productoId] ?? crearVariantesState();
+  }
+
+  protected estaGuardandoVariante(productoId: string): boolean {
+    return this.obtenerVariantesState(productoId).estado === 'guardando';
+  }
+
   private construirCrearProductoRequest(): CrearProductoRequest {
     const form = this.productoForm.getRawValue();
 
@@ -114,6 +229,70 @@ export class ProductosPageComponent implements OnInit {
       costo: form.costo === null ? null : normalizarNumero(form.costo),
       activo: true,
     };
+  }
+
+  private construirCrearVarianteRequest(productoId: string): CrearProductoVarianteRequest {
+    const form = this.varianteForm.getRawValue();
+
+    return {
+      productoId,
+      talla: normalizarTextoNullable(form.talla),
+      color: normalizarTextoNullable(form.color),
+      codigoSku: normalizarTextoNullable(form.codigoSku),
+      codigoBarras: normalizarTextoNullable(form.codigoBarras),
+      activo: true,
+    };
+  }
+
+  private cambiarEstadoVariante(
+    productoId: string,
+    varianteId: string,
+    activar: boolean,
+  ): void {
+    this.actualizarVariantesState(productoId, {
+      estado: 'guardando',
+      mensaje: '',
+    });
+
+    const request = activar
+      ? this.productosApi.activarVariante(productoId, varianteId)
+      : this.productosApi.desactivarVariante(productoId, varianteId);
+
+    request.subscribe({
+      next: (varianteActualizada) => {
+        const state = this.obtenerVariantesState(productoId);
+        this.actualizarVariantesState(productoId, {
+          estado: 'listo',
+          variantes: state.variantes.map((variante) =>
+            variante.id === varianteActualizada.id ? varianteActualizada : variante,
+          ),
+          mensaje: activar ? 'Variante activada.' : 'Variante desactivada.',
+        });
+      },
+      error: (error: unknown) => {
+        this.actualizarVariantesState(productoId, {
+          estado: 'listo',
+          mensaje: this.obtenerMensajeError(error, 'No se pudo actualizar la variante.'),
+        });
+      },
+    });
+  }
+
+  private actualizarVariantesState(
+    productoId: string,
+    patch: Partial<VariantesProductoState>,
+  ): void {
+    this.variantesPorProducto.update((variantesPorProducto) => {
+      const actual = variantesPorProducto[productoId] ?? crearVariantesState();
+
+      return {
+        ...variantesPorProducto,
+        [productoId]: {
+          ...actual,
+          ...patch,
+        },
+      };
+    });
   }
 
   private obtenerMensajeError(error: unknown, fallback: string): string {
@@ -155,4 +334,12 @@ function normalizarTextoNullable(valor: string): string | null {
 
 function normalizarNumero(valor: number): number {
   return Math.round((Number(valor) + Number.EPSILON) * 100) / 100;
+}
+
+function crearVariantesState(): VariantesProductoState {
+  return {
+    estado: 'sin-cargar',
+    variantes: [],
+    mensaje: '',
+  };
 }

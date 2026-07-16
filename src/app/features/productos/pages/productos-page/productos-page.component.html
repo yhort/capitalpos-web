@@ -94,6 +94,7 @@
             <span>SKU</span>
             <span>Precio</span>
             <span>Estado</span>
+            <span>Variantes</span>
           </div>
 
           @for (producto of productosFiltrados(); track producto.id) {
@@ -107,7 +108,103 @@
               <span [class.product-status--inactive]="!producto.activo">
                 {{ producto.activo ? 'Activo' : 'Inactivo' }}
               </span>
+              <button type="button" class="ghost-button products-table__action" (click)="alternarVariantes(producto)">
+                {{ productoExpandidoId() === producto.id ? 'Ocultar' : 'Ver' }}
+              </button>
             </div>
+
+            @if (productoExpandidoId() === producto.id) {
+              <section class="variants-panel" aria-label="Variantes de producto">
+                <div class="variants-panel__header">
+                  <div>
+                    <h4>Variantes de {{ producto.nombre }}</h4>
+                    <p>Talla y color son opcionales; SKU identifica la variante en retail.</p>
+                  </div>
+                  <button type="button" class="ghost-button" (click)="cargarVariantes(producto.id)" [disabled]="obtenerVariantesState(producto.id).estado === 'cargando' || estaGuardandoVariante(producto.id)">
+                    Actualizar
+                  </button>
+                </div>
+
+                @if (obtenerVariantesState(producto.id).mensaje) {
+                  <p class="variant-message" role="status">{{ obtenerVariantesState(producto.id).mensaje }}</p>
+                }
+
+                <form class="variant-form" [formGroup]="varianteForm" (ngSubmit)="crearVariante(producto)">
+                  <label>
+                    <span>Talla</span>
+                    <input type="text" maxlength="50" formControlName="talla" placeholder="S, M, 100ML" />
+                  </label>
+
+                  <label>
+                    <span>Color</span>
+                    <input type="text" maxlength="80" formControlName="color" placeholder="Negro" />
+                  </label>
+
+                  <label>
+                    <span>SKU variante</span>
+                    <input type="text" maxlength="80" formControlName="codigoSku" placeholder="POL-BRO-NEG-S" />
+                  </label>
+
+                  <label>
+                    <span>Código barras</span>
+                    <input type="text" maxlength="80" formControlName="codigoBarras" placeholder="775000000001" />
+                  </label>
+
+                  @if (varianteForm.invalid && varianteForm.touched) {
+                    <div class="form-errors variant-form__full" role="alert">
+                      @if (varianteForm.controls.codigoSku.invalid) {
+                        <span>El SKU de la variante es obligatorio y debe tener hasta 80 caracteres.</span>
+                      }
+                      @if (varianteForm.controls.talla.invalid || varianteForm.controls.color.invalid || varianteForm.controls.codigoBarras.invalid) {
+                        <span>Talla, color y código de barras deben respetar la longitud máxima.</span>
+                      }
+                    </div>
+                  }
+
+                  <button type="submit" class="primary-button variant-form__full" [disabled]="estaGuardandoVariante(producto.id)">
+                    Crear variante
+                  </button>
+                </form>
+
+                @if (obtenerVariantesState(producto.id).estado === 'cargando') {
+                  <p class="empty-state">Cargando variantes...</p>
+                } @else if (obtenerVariantesState(producto.id).variantes.length === 0) {
+                  <p class="empty-state">Este producto aún no tiene variantes.</p>
+                } @else {
+                  <div class="variants-table" role="table" aria-label="Variantes registradas">
+                    <div class="variants-table__row variants-table__row--head" role="row">
+                      <span>Talla</span>
+                      <span>Color</span>
+                      <span>SKU</span>
+                      <span>Código barras</span>
+                      <span>Estado</span>
+                      <span>Acción</span>
+                    </div>
+
+                    @for (variante of obtenerVariantesState(producto.id).variantes; track variante.id) {
+                      <div class="variants-table__row" role="row">
+                        <span>{{ variante.talla || 'sin talla' }}</span>
+                        <span>{{ variante.color || 'sin color' }}</span>
+                        <span>{{ variante.codigoSku || 'sin SKU' }}</span>
+                        <span>{{ variante.codigoBarras || 'sin código' }}</span>
+                        <span [class.product-status--inactive]="!variante.activo">
+                          {{ variante.activo ? 'Activa' : 'Inactiva' }}
+                        </span>
+                        @if (variante.activo) {
+                          <button type="button" class="ghost-button" (click)="desactivarVariante(producto.id, variante.id)" [disabled]="estaGuardandoVariante(producto.id)">
+                            Desactivar
+                          </button>
+                        } @else {
+                          <button type="button" class="ghost-button" (click)="activarVariante(producto.id, variante.id)" [disabled]="estaGuardandoVariante(producto.id)">
+                            Activar
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </section>
+            }
           }
         </div>
       }
