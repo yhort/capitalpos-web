@@ -6,7 +6,7 @@ import { ProductosApiService } from '../../../productos/data-access/productos-ap
 import { ProductoResponse, ProductoVarianteResponse } from '../../../productos/models/producto.model';
 import { StockApiService } from '../../data-access/stock-api.service';
 import { AjustarStockProductoRequest, StockProductoResponse } from '../../models/stock.model';
-import { InventarioPageComponent } from './inventario-page.component';
+import { formatearFechaActualizacionStock, InventarioPageComponent } from './inventario-page.component';
 
 describe('InventarioPageComponent', () => {
   let fixture: ComponentFixture<InventarioPageComponent>;
@@ -59,6 +59,9 @@ describe('InventarioPageComponent', () => {
   });
 
   it('consults product stock and shows available, reserved and free stock', async () => {
+    stockApi.stockResponse = crearStockResponse({
+      fechaActualizacion: '2026-07-16T17:40:53.186032+00:00',
+    });
     await crearComponente();
 
     component['consultaForm'].patchValue({
@@ -75,6 +78,39 @@ describe('InventarioPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Stock consultado correctamente.');
     expect(fixture.nativeElement.textContent).toContain('Cantidad disponible');
     expect(fixture.nativeElement.textContent).toContain('Stock libre');
+    expect(fixture.nativeElement.textContent).toContain('16/07/2026 12:40 p. m.');
+    expect(fixture.nativeElement.textContent).not.toContain('2026-07-16T17:40:53.186032+00:00');
+  });
+
+  it('formats stock update date in Lima timezone', () => {
+    expect(formatearFechaActualizacionStock('2026-07-16T17:40:53.186032+00:00')).toBe('16/07/2026 12:40 p. m.');
+  });
+
+  it('shows Sin fecha when stock update date is null', async () => {
+    stockApi.stockResponse = crearStockResponse({ fechaActualizacion: null });
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['consultarStock']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Sin fecha');
+  });
+
+  it('shows Sin fecha when stock update date is invalid', async () => {
+    stockApi.stockResponse = crearStockResponse({ fechaActualizacion: 'fecha-invalida' });
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['consultarStock']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Sin fecha');
+    expect(fixture.nativeElement.textContent).not.toContain('Invalid Date');
   });
 
   it('loads variants when product changes', async () => {
@@ -205,6 +241,9 @@ describe('InventarioPageComponent', () => {
   });
 
   it('adjusts available stock and refreshes the result', async () => {
+    stockApi.stockResponse = crearStockResponse({
+      fechaActualizacion: '2026-07-16T17:40:53.186032+00:00',
+    });
     await crearComponente();
 
     component['consultaForm'].patchValue({
@@ -224,6 +263,8 @@ describe('InventarioPageComponent', () => {
     expect(component['mensaje']()).toBe('Stock ajustado correctamente.');
     expect(stockApi.obtenerStockProductoCalls).toBe(1);
     expect(component['stock']()?.cantidadDisponible).toBe(10);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('16/07/2026 12:40 p. m.');
   });
 
   it('adjusts variant stock with productoVarianteId and refreshes the result', async () => {
@@ -317,20 +358,24 @@ class StockApiServiceFake {
   ultimaVarianteId: string | null = null;
   ultimoAjusteRequest: AjustarStockProductoRequest | null = null;
   ajustarStockResponse: Observable<StockProductoResponse> | null = null;
+  stockResponse: StockProductoResponse = crearStockResponse();
   obtenerStockProductoCalls = 0;
   obtenerStockProductoVarianteCalls = 0;
 
   obtenerStockProducto(productoId: string) {
     this.obtenerStockProductoCalls += 1;
     this.ultimoProductoId = productoId;
-    return of(crearStockResponse());
+    return of(this.stockResponse);
   }
 
   obtenerStockProductoVariante(productoId: string, productoVarianteId: string) {
     this.obtenerStockProductoVarianteCalls += 1;
     this.ultimaVarianteProductoId = productoId;
     this.ultimaVarianteId = productoVarianteId;
-    return of(crearStockResponse({ productoVarianteId }));
+    return of({
+      ...this.stockResponse,
+      productoVarianteId,
+    });
   }
 
   ajustarStock(request: AjustarStockProductoRequest) {

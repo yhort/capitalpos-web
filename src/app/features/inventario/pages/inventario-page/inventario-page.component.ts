@@ -199,6 +199,10 @@ export class InventarioPageComponent implements OnInit {
     return [producto.nombre, producto.codigoSku].filter((valor) => !!valor).join(' - ');
   }
 
+  protected formatearFechaActualizacion(fecha: string | null): string {
+    return formatearFechaActualizacionStock(fecha);
+  }
+
   protected puedeAjustarStock(): boolean {
     if (
       this.estado() === 'consultando' ||
@@ -329,4 +333,28 @@ function normalizarTextoNullable(valor: string): string | null {
 
 function normalizarNumero(valor: number): number {
   return Math.round((Number(valor) + Number.EPSILON) * 1000) / 1000;
+}
+
+export function formatearFechaActualizacionStock(fecha: string | null): string {
+  if (!fecha) {
+    return 'Sin fecha';
+  }
+
+  const fechaActualizacion = new Date(fecha);
+
+  if (Number.isNaN(fechaActualizacion.getTime())) {
+    return 'Sin fecha';
+  }
+
+  return new Intl.DateTimeFormat('es-PE', {
+    timeZone: 'America/Lima',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(fechaActualizacion)
+    .replace(',', '')
+    .replace(/\u00a0/g, ' ');
 }

@@ -5,7 +5,7 @@ export interface StockProductoResponse {
   readonly cantidadDisponible: number;
   readonly cantidadReservada: number;
   readonly stockLibre: number;
-  readonly fechaActualizacion: string;
+  readonly fechaActualizacion: string | null;
 }
 
 export interface AjustarStockProductoRequest {
