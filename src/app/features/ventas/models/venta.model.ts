@@ -1,6 +1,11 @@
+export type CanalVenta = 'TIENDA' | 'PROVINCIA' | 'MARKETING' | 'MAYORISTA' | 'MAQUILA' | 'OFERTAS';
+
 export interface CrearVentaRequest {
   readonly fecha: string | null;
   readonly clienteId: string | null;
+  readonly canalVenta?: CanalVenta;
+  readonly puntoVentaId?: string | null;
+  readonly vendedorId?: string | null;
   readonly detalles: readonly CrearVentaDetalleRequest[];
 }
 
@@ -29,6 +34,9 @@ export interface VentaResponse {
   readonly igv: number;
   readonly total: number;
   readonly estado: string;
+  readonly canalVenta?: string | null;
+  readonly puntoVentaId?: string | null;
+  readonly vendedorId?: string | null;
   readonly fechaCreacion: string;
   readonly detalles: readonly VentaDetalleResponse[];
 }

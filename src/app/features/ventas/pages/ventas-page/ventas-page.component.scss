@@ -137,6 +137,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.sale-date {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .customer-form__full {
   grid-column: 1 / -1;
 }

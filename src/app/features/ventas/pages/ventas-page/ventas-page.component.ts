@@ -21,7 +21,7 @@ import { ProductoVarianteResponse } from '../../../productos/models/producto.mod
 import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse, CrearClienteRequest } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
-import { CrearVentaRequest, EmitirCpeDesdeVentaRequest, VentaResponse } from '../../models/venta.model';
+import { CanalVenta, CrearVentaRequest, EmitirCpeDesdeVentaRequest, VentaResponse } from '../../models/venta.model';
 
 interface PosItem {
   readonly producto: ProductoResponse;
@@ -53,6 +53,14 @@ type PosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
 type EstadoEmisionVenta = 'sin-emitir' | 'emitiendo' | EmisionCpeEstado;
 
 const IGV = 0.18;
+const CANALES_VENTA: readonly { readonly valor: CanalVenta; readonly etiqueta: string }[] = [
+  { valor: 'TIENDA', etiqueta: 'Tienda' },
+  { valor: 'PROVINCIA', etiqueta: 'Provincia' },
+  { valor: 'MARKETING', etiqueta: 'Marketing' },
+  { valor: 'MAYORISTA', etiqueta: 'Mayorista' },
+  { valor: 'MAQUILA', etiqueta: 'Maquila' },
+  { valor: 'OFERTAS', etiqueta: 'Ofertas' },
+];
 
 @Component({
   selector: 'app-ventas-page',
@@ -81,6 +89,7 @@ export class VentasPageComponent implements OnInit {
   protected readonly emisionMensaje = signal('');
   protected readonly emisionRespuesta = signal<CpeEmisionResponse | null>(null);
   protected readonly emisionErrores = signal<readonly string[]>([]);
+  protected readonly canalesVenta = CANALES_VENTA;
 
   protected readonly productoForm = this.formBuilder.nonNullable.group({
     productoId: ['', Validators.required],
@@ -98,6 +107,7 @@ export class VentasPageComponent implements OnInit {
 
   protected readonly ventaForm = this.formBuilder.nonNullable.group({
     fecha: [this.obtenerFechaActual()],
+    canalVenta: ['TIENDA' as CanalVenta, Validators.required],
   });
 
   protected readonly emisionForm = this.formBuilder.nonNullable.group({
@@ -517,6 +527,10 @@ export class VentasPageComponent implements OnInit {
       : this.obtenerStockLibre(item.producto.id);
   }
 
+  protected obtenerEtiquetaCanalVenta(canal: string): string {
+    return this.canalesVenta.find((item) => item.valor === canal)?.etiqueta ?? canal;
+  }
+
   protected puedeAgregarProducto(productoId: string): boolean {
     const stockLibre = this.obtenerStockLibre(productoId);
     return stockLibre !== null && stockLibre > 0;
@@ -544,6 +558,9 @@ export class VentasPageComponent implements OnInit {
         ? new Date(`${this.ventaForm.controls.fecha.value}T00:00:00`).toISOString()
         : null,
       clienteId: normalizarTextoNullable(this.clienteForm.controls.clienteId.value),
+      canalVenta: this.ventaForm.controls.canalVenta.value,
+      puntoVentaId: null,
+      vendedorId: null,
       detalles: this.items().map((item) => ({
         productoId: item.producto.id,
         productoVarianteId: item.variante?.id ?? null,

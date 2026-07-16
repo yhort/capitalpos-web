@@ -102,6 +102,38 @@ describe('VentasPageComponent', () => {
     expect(fechaInput.value).toBe('2026-07-12');
   });
 
+  it('allows sales request models with commercial dimensions', () => {
+    const request: CrearVentaRequest = {
+      fecha: null,
+      clienteId: null,
+      canalVenta: 'OFERTAS',
+      puntoVentaId: null,
+      vendedorId: null,
+      detalles: [],
+    };
+
+    expect(request.canalVenta).toBe('OFERTAS');
+  });
+
+  it('shows commercial channel selector with TIENDA by default', async () => {
+    await crearComponente();
+
+    const channelSelect = fixture.nativeElement.querySelector('select[formcontrolname="canalVenta"]') as HTMLSelectElement;
+
+    expect(channelSelect).toBeTruthy();
+    expect(component['ventaForm'].controls.canalVenta.value).toBe('TIENDA');
+    expect(channelSelect.value).toBe('TIENDA');
+    expect(fixture.nativeElement.textContent).toContain('Canal: Tienda');
+    expect(Array.from(channelSelect.options).map((option) => option.value)).toEqual([
+      'TIENDA',
+      'PROVINCIA',
+      'MARKETING',
+      'MAYORISTA',
+      'MAQUILA',
+      'OFERTAS',
+    ]);
+  });
+
   it('shows a clear path to create products when the catalog is empty', async () => {
     posApi.productos = [];
 
@@ -130,6 +162,9 @@ describe('VentasPageComponent', () => {
     expect(posApi.ultimaVentaRequest).toEqual({
       fecha: expect.any(String),
       clienteId: null,
+      canalVenta: 'TIENDA',
+      puntoVentaId: null,
+      vendedorId: null,
       detalles: [
         {
           productoId: 'producto-1',
@@ -143,6 +178,42 @@ describe('VentasPageComponent', () => {
     });
     expect(component['ultimaVenta']()?.id).toBe('venta-1');
     expect(component['mensaje']()).toContain('Venta registrada correctamente.');
+  });
+
+  it('sends PROVINCIA commercial channel when registering a sale', async () => {
+    await crearComponente();
+
+    component['ventaForm'].patchValue({ canalVenta: 'PROVINCIA' });
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest).toEqual(expect.objectContaining({
+      canalVenta: 'PROVINCIA',
+      puntoVentaId: null,
+      vendedorId: null,
+    }));
+  });
+
+  it('sends MARKETING commercial channel when registering a sale', async () => {
+    await crearComponente();
+
+    component['ventaForm'].patchValue({ canalVenta: 'MARKETING' });
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest).toEqual(expect.objectContaining({
+      canalVenta: 'MARKETING',
+    }));
   });
 
   it('keeps adding and selling products without variants as before', async () => {
@@ -419,6 +490,27 @@ describe('VentasPageComponent', () => {
     expect(component['mensaje']()).toBe('Stock insuficiente para la cantidad solicitada.');
   });
 
+  it('shows backend invalid channel errors without clearing the cart', async () => {
+    await crearComponente();
+    posApi.crearVentaError = new HttpErrorResponse({
+      status: 400,
+      error: {
+        mensaje: 'Canal de venta invalido.',
+      },
+    });
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(component['items']().length).toBe(1);
+    expect(component['mensaje']()).toBe('Canal de venta invalido.');
+  });
+
   it('does not register twice while a sale is already being saved', async () => {
     await crearComponente();
 
@@ -520,6 +612,9 @@ class PosApiServiceFake {
       igv: 3.6,
       total: 23.6,
       estado: 'Registrada',
+      canalVenta: request.canalVenta,
+      puntoVentaId: request.puntoVentaId,
+      vendedorId: request.vendedorId,
       fechaCreacion: '2026-07-11T00:00:00Z',
       detalles: [],
     });

@@ -203,7 +203,18 @@
           <span>Fecha</span>
           <input type="date" formControlName="fecha" />
         </label>
+
+        <label>
+          <span>Canal comercial</span>
+          <select formControlName="canalVenta">
+            @for (canal of canalesVenta; track canal.valor) {
+              <option [value]="canal.valor">{{ canal.etiqueta }}</option>
+            }
+          </select>
+        </label>
       </form>
+
+      <p class="sale-channel">Canal: {{ obtenerEtiquetaCanalVenta(ventaForm.controls.canalVenta.value) }}</p>
 
       @if (items().length === 0) {
         @if (productosActivos().length === 0 && estado() !== 'cargando') {
