@@ -31,7 +31,7 @@
       <form class="stock-form" [formGroup]="consultaForm" (ngSubmit)="consultarStock()">
         <label class="stock-form__full">
           <span>Producto</span>
-          <input type="text" list="productos-inventario" formControlName="productoId" placeholder="Selecciona o ingresa el ID del producto" />
+          <input type="text" list="productos-inventario" formControlName="productoId" placeholder="Selecciona o ingresa el ID del producto" (change)="alCambiarProducto()" />
           <datalist id="productos-inventario">
             @for (producto of productosActivos(); track producto.id) {
               <option [value]="producto.id">{{ producto.nombre }} - {{ producto.codigoSku || 'sin SKU' }}</option>
@@ -39,10 +39,23 @@
           </datalist>
         </label>
 
-        <label class="stock-form__full">
-          <span>Variante opcional</span>
-          <input type="text" formControlName="productoVarianteId" placeholder="ID de variante si aplica" />
-        </label>
+        @if (variantesEstado() === 'cargando') {
+          <p class="selected-product">Cargando variantes del producto...</p>
+        }
+
+        @if (variantesActivas().length > 0) {
+          <label class="stock-form__full">
+            <span>Variante</span>
+            <select formControlName="productoVarianteId">
+              <option value="">Seleccionar variante</option>
+              @for (variante of variantesActivas(); track variante.id) {
+                <option [value]="variante.id">{{ obtenerTextoVariante(variante) }}</option>
+              }
+            </select>
+          </label>
+        } @else if (variantesEstado() === 'listo' && consultaForm.controls.productoId.value) {
+          <p class="selected-product">Producto sin variantes activas. Se consultará stock del producto base.</p>
+        }
 
         @if (productoSeleccionado(); as producto) {
           <p class="selected-product">

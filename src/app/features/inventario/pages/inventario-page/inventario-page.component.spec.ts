@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Observable, of, throwError } from 'rxjs';
 
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
-import { ProductoResponse } from '../../../productos/models/producto.model';
+import { ProductoResponse, ProductoVarianteResponse } from '../../../productos/models/producto.model';
 import { StockApiService } from '../../data-access/stock-api.service';
 import { AjustarStockProductoRequest, StockProductoResponse } from '../../models/stock.model';
 import { InventarioPageComponent } from './inventario-page.component';
@@ -67,11 +67,87 @@ describe('InventarioPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Stock libre');
   });
 
-  it('consults variant stock when variant id is provided', async () => {
+  it('loads variants when product changes', async () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
       productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+
+    expect(productosApi.ultimoListarVariantesProductoId).toBe('producto-1');
+  });
+
+  it('shows active variants in a visual selector', async () => {
+    productosApi.variantes.set('producto-1', [
+      crearVarianteResponse({
+        id: 'variante-1',
+        color: 'Negro',
+        talla: 'M',
+        codigoSku: 'BRO-POLO-NEG-M',
+      }),
+      crearVarianteResponse({
+        id: 'variante-2',
+        color: 'Blanco',
+        talla: 'S',
+        codigoSku: 'BRO-POLO-BLA-S',
+        activo: false,
+      }),
+    ]);
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+    fixture.detectChanges();
+
+    const textContent = fixture.nativeElement.textContent;
+    const variantSelect = fixture.nativeElement.querySelector('select[formcontrolname="productoVarianteId"]') as HTMLSelectElement;
+
+    expect(variantSelect).toBeTruthy();
+    expect(textContent).toContain('Negro / M - SKU BRO-POLO-NEG-M');
+    expect(textContent).not.toContain('Blanco / S - SKU BRO-POLO-BLA-S');
+  });
+
+  it('does not consult variant products without selected variant', async () => {
+    productosApi.variantes.set('producto-1', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+    component['consultarStock']();
+
+    expect(stockApi.ultimoProductoId).toBeNull();
+    expect(stockApi.ultimaVarianteProductoId).toBeNull();
+    expect(component['mensaje']()).toBe('Selecciona una variante para consultar o ajustar stock.');
+  });
+
+  it('does not adjust variant products without selected variant', async () => {
+    productosApi.variantes.set('producto-1', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+    component['ajustarStock']();
+
+    expect(stockApi.ultimoAjusteRequest).toBeNull();
+    expect(component['mensaje']()).toBe('Selecciona una variante para consultar o ajustar stock.');
+  });
+
+  it('consults variant stock when a variant is selected', async () => {
+    productosApi.variantes.set('producto-1', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+    component['consultaForm'].patchValue({
       productoVarianteId: 'variante-1',
     });
     component['consultarStock']();
@@ -98,7 +174,34 @@ describe('InventarioPageComponent', () => {
       cantidadDisponible: 15.123,
     });
     expect(component['mensaje']()).toBe('Stock ajustado correctamente.');
-    expect(component['stock']()?.cantidadDisponible).toBe(15.123);
+    expect(stockApi.obtenerStockProductoCalls).toBe(1);
+    expect(component['stock']()?.cantidadDisponible).toBe(10);
+  });
+
+  it('adjusts variant stock with productoVarianteId and refreshes the result', async () => {
+    productosApi.variantes.set('producto-1', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+    component['consultaForm'].patchValue({
+      productoVarianteId: 'variante-1',
+    });
+    component['ajusteForm'].patchValue({
+      cantidadDisponible: 18,
+    });
+    component['ajustarStock']();
+
+    expect(stockApi.ultimoAjusteRequest).toEqual({
+      productoId: 'producto-1',
+      productoVarianteId: 'variante-1',
+      cantidadDisponible: 18,
+    });
+    expect(stockApi.ultimaVarianteProductoId).toBe('producto-1');
+    expect(stockApi.ultimaVarianteId).toBe('variante-1');
+    expect(component['mensaje']()).toBe('Stock ajustado correctamente.');
   });
 
   it('shows validation state when product is missing', async () => {
@@ -133,6 +236,11 @@ describe('InventarioPageComponent', () => {
 });
 
 class ProductosApiServiceFake {
+  ultimoListarVariantesProductoId: string | null = null;
+  readonly variantes = new Map<string, readonly ProductoVarianteResponse[]>([
+    ['producto-1', []],
+  ]);
+
   listarProductos() {
     return of<readonly ProductoResponse[]>([
       {
@@ -148,6 +256,11 @@ class ProductosApiServiceFake {
       },
     ]);
   }
+
+  listarVariantes(productoId: string) {
+    this.ultimoListarVariantesProductoId = productoId;
+    return of(this.variantes.get(productoId) ?? []);
+  }
 }
 
 class StockApiServiceFake {
@@ -156,13 +269,17 @@ class StockApiServiceFake {
   ultimaVarianteId: string | null = null;
   ultimoAjusteRequest: AjustarStockProductoRequest | null = null;
   ajustarStockResponse: Observable<StockProductoResponse> | null = null;
+  obtenerStockProductoCalls = 0;
+  obtenerStockProductoVarianteCalls = 0;
 
   obtenerStockProducto(productoId: string) {
+    this.obtenerStockProductoCalls += 1;
     this.ultimoProductoId = productoId;
     return of(crearStockResponse());
   }
 
   obtenerStockProductoVariante(productoId: string, productoVarianteId: string) {
+    this.obtenerStockProductoVarianteCalls += 1;
     this.ultimaVarianteProductoId = productoId;
     this.ultimaVarianteId = productoVarianteId;
     return of(crearStockResponse({ productoVarianteId }));
@@ -186,6 +303,21 @@ function crearStockResponse(overrides: Partial<StockProductoResponse> = {}): Sto
     cantidadReservada: 2,
     stockLibre: 8,
     fechaActualizacion: '2026-07-14T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearVarianteResponse(overrides: Partial<ProductoVarianteResponse> = {}): ProductoVarianteResponse {
+  return {
+    id: 'variante-1',
+    empresaId: 'empresa-1',
+    productoId: 'producto-1',
+    talla: 'M',
+    color: 'Negro',
+    codigoSku: 'BRO-POLO-NEG-M',
+    codigoBarras: '775000000001',
+    activo: true,
+    fechaCreacion: '2026-07-16T10:00:00Z',
     ...overrides,
   };
 }

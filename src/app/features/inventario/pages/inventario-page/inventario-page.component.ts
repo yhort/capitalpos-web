@@ -4,11 +4,12 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
-import { ProductoResponse } from '../../../productos/models/producto.model';
+import { ProductoResponse, ProductoVarianteResponse } from '../../../productos/models/producto.model';
 import { StockApiService } from '../../data-access/stock-api.service';
 import { AjustarStockProductoRequest, StockProductoResponse } from '../../models/stock.model';
 
 type InventarioEstado = 'cargando' | 'listo' | 'consultando' | 'ajustando' | 'error' | 'error-validacion';
+type VariantesEstado = 'sin-producto' | 'cargando' | 'listo' | 'error';
 
 @Component({
   selector: 'app-inventario-page',
@@ -24,6 +25,8 @@ export class InventarioPageComponent implements OnInit {
   protected readonly estado = signal<InventarioEstado>('cargando');
   protected readonly mensaje = signal('');
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
+  protected readonly variantes = signal<readonly ProductoVarianteResponse[]>([]);
+  protected readonly variantesEstado = signal<VariantesEstado>('sin-producto');
   protected readonly stock = signal<StockProductoResponse | null>(null);
 
   protected readonly consultaForm = this.formBuilder.nonNullable.group({
@@ -43,6 +46,10 @@ export class InventarioPageComponent implements OnInit {
     const productoId = this.consultaForm.controls.productoId.value.trim();
     return this.productos().find((producto) => producto.id === productoId) ?? null;
   });
+
+  protected readonly variantesActivas = computed(() =>
+    this.variantes().filter((variante) => variante.activo),
+  );
 
   ngOnInit(): void {
     this.cargarProductos();
@@ -68,6 +75,32 @@ export class InventarioPageComponent implements OnInit {
     });
   }
 
+  protected alCambiarProducto(): void {
+    const productoId = this.consultaForm.controls.productoId.value.trim();
+
+    this.consultaForm.patchValue({ productoVarianteId: '' });
+    this.stock.set(null);
+    this.variantes.set([]);
+
+    if (!productoId) {
+      this.variantesEstado.set('sin-producto');
+      return;
+    }
+
+    this.variantesEstado.set('cargando');
+    this.productosApi.listarVariantes(productoId).subscribe({
+      next: (variantes) => {
+        this.variantes.set(variantes);
+        this.variantesEstado.set('listo');
+      },
+      error: (error: unknown) => {
+        this.variantes.set([]);
+        this.variantesEstado.set('error');
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar las variantes del producto.'));
+      },
+    });
+  }
+
   protected consultarStock(): void {
     if (this.estado() === 'consultando' || this.estado() === 'ajustando') {
       return;
@@ -81,30 +114,19 @@ export class InventarioPageComponent implements OnInit {
       return;
     }
 
-    const productoId = this.consultaForm.controls.productoId.value.trim();
-    const productoVarianteId = normalizarTextoNullable(this.consultaForm.controls.productoVarianteId.value);
-    const consulta = productoVarianteId
-      ? this.stockApi.obtenerStockProductoVariante(productoId, productoVarianteId)
-      : this.stockApi.obtenerStockProducto(productoId);
+    const validacionVariante = this.validarVarianteSeleccionada();
 
-    this.estado.set('consultando');
-    this.mensaje.set('');
+    if (!validacionVariante.ok) {
+      this.estado.set('error-validacion');
+      this.mensaje.set(validacionVariante.mensaje);
+      return;
+    }
 
-    consulta.subscribe({
-      next: (stock) => {
-        this.stock.set(stock);
-        this.ajusteForm.patchValue({
-          cantidadDisponible: stock.cantidadDisponible,
-        });
-        this.estado.set('listo');
-        this.mensaje.set('Stock consultado correctamente.');
-      },
-      error: (error: unknown) => {
-        this.stock.set(null);
-        this.estado.set(error instanceof HttpErrorResponse && error.status === 400 ? 'error-validacion' : 'error');
-        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudo consultar el stock.'));
-      },
-    });
+    this.ejecutarConsultaStock(
+      this.consultaForm.controls.productoId.value.trim(),
+      validacionVariante.productoVarianteId,
+      'Stock consultado correctamente.',
+    );
   }
 
   protected ajustarStock(): void {
@@ -121,18 +143,21 @@ export class InventarioPageComponent implements OnInit {
       return;
     }
 
+    const validacionVariante = this.validarVarianteSeleccionada();
+
+    if (!validacionVariante.ok) {
+      this.estado.set('error-validacion');
+      this.mensaje.set(validacionVariante.mensaje);
+      return;
+    }
+
     const request = this.construirAjustarStockRequest();
     this.estado.set('ajustando');
     this.mensaje.set('');
 
     this.stockApi.ajustarStock(request).subscribe({
-      next: (stock) => {
-        this.stock.set(stock);
-        this.ajusteForm.patchValue({
-          cantidadDisponible: stock.cantidadDisponible,
-        });
-        this.estado.set('listo');
-        this.mensaje.set('Stock ajustado correctamente.');
+      next: () => {
+        this.ejecutarConsultaStock(request.productoId, request.productoVarianteId, 'Stock ajustado correctamente.');
       },
       error: (error: unknown) => {
         this.estado.set(error instanceof HttpErrorResponse && error.status === 400 ? 'error-validacion' : 'error');
@@ -144,8 +169,86 @@ export class InventarioPageComponent implements OnInit {
   private construirAjustarStockRequest(): AjustarStockProductoRequest {
     return {
       productoId: this.consultaForm.controls.productoId.value.trim(),
-      productoVarianteId: normalizarTextoNullable(this.consultaForm.controls.productoVarianteId.value),
+      productoVarianteId: this.validarVarianteSeleccionada().productoVarianteId,
       cantidadDisponible: normalizarNumero(this.ajusteForm.controls.cantidadDisponible.value),
+    };
+  }
+
+  protected obtenerTextoVariante(variante: ProductoVarianteResponse): string {
+    const atributos = [variante.color, variante.talla].filter((valor) => !!valor);
+    const descripcion = atributos.length > 0 ? atributos.join(' / ') : 'Variante';
+    const sku = variante.codigoSku ? `SKU ${variante.codigoSku}` : '';
+    const barras = variante.codigoBarras ? `CB ${variante.codigoBarras}` : '';
+    return [descripcion, sku, barras].filter((valor) => !!valor).join(' - ');
+  }
+
+  private ejecutarConsultaStock(productoId: string, productoVarianteId: string | null, mensajeExito: string): void {
+    const consulta = productoVarianteId
+      ? this.stockApi.obtenerStockProductoVariante(productoId, productoVarianteId)
+      : this.stockApi.obtenerStockProducto(productoId);
+
+    this.estado.set('consultando');
+    this.mensaje.set('');
+
+    consulta.subscribe({
+      next: (stock) => {
+        this.stock.set(stock);
+        this.ajusteForm.patchValue({
+          cantidadDisponible: stock.cantidadDisponible,
+        });
+        this.estado.set('listo');
+        this.mensaje.set(mensajeExito);
+      },
+      error: (error: unknown) => {
+        this.stock.set(null);
+        this.estado.set(error instanceof HttpErrorResponse && error.status === 400 ? 'error-validacion' : 'error');
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudo consultar el stock.'));
+      },
+    });
+  }
+
+  private validarVarianteSeleccionada():
+    | { readonly ok: true; readonly productoVarianteId: string | null }
+    | { readonly ok: false; readonly productoVarianteId: null; readonly mensaje: string } {
+    if (this.variantesEstado() === 'cargando') {
+      return {
+        ok: false,
+        productoVarianteId: null,
+        mensaje: 'Espera a que carguen las variantes del producto.',
+      };
+    }
+
+    if (this.variantesEstado() === 'error') {
+      return {
+        ok: false,
+        productoVarianteId: null,
+        mensaje: 'No se pudieron cargar las variantes del producto.',
+      };
+    }
+
+    const variantesActivas = this.variantesActivas();
+
+    if (variantesActivas.length === 0) {
+      return {
+        ok: true,
+        productoVarianteId: null,
+      };
+    }
+
+    const productoVarianteId = normalizarTextoNullable(this.consultaForm.controls.productoVarianteId.value);
+    const varianteExiste = variantesActivas.some((variante) => variante.id === productoVarianteId);
+
+    if (!productoVarianteId || !varianteExiste) {
+      return {
+        ok: false,
+        productoVarianteId: null,
+        mensaje: 'Selecciona una variante para consultar o ajustar stock.',
+      };
+    }
+
+    return {
+      ok: true,
+      productoVarianteId,
     };
   }
 
