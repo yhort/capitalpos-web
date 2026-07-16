@@ -1,15 +1,10 @@
 import { Component } from '@angular/core';
-
-import { ModulePlaceholderComponent } from '../../../../shared/ui/module-placeholder/module-placeholder.component';
+import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-reportes-page',
-  imports: [ModulePlaceholderComponent],
-  template: `
-    <app-module-placeholder
-      title="Reportes"
-      description="Pantalla base para futuros reportes comerciales y operativos."
-    />
-  `,
+  imports: [RouterLink],
+  templateUrl: './reportes-page.component.html',
+  styleUrl: './reportes-page.component.scss',
 })
 export class ReportesPageComponent {}
