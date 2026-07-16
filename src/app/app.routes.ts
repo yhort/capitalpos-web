@@ -116,6 +116,21 @@ export const routes: Routes = [
                     ),
             },
             {
+                path: 'reportes/ventas-por-canal',
+                title: 'Ventas por canal | CapitalPOS',
+                data: {
+                    pageTitle: 'Ventas por canal',
+                    breadcrumb: [
+                        { label: 'Reportes' },
+                        { label: 'Ventas por canal' },
+                    ],
+                },
+                loadComponent: () =>
+                    import(
+                        './features/reportes/pages/ventas-por-canal-page/ventas-por-canal-page.component'
+                    ).then((component) => component.VentasPorCanalPageComponent),
+            },
+            {
                 path: 'reportes',
                 title: 'Reportes | CapitalPOS',
                 data: {

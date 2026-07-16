@@ -1,0 +1,77 @@
+<section class="report-page">
+  <header class="report-page__header">
+    <div>
+      <h2>Ventas por canal</h2>
+      <p>Consulta ventas, unidades, soles y precio promedio por canal comercial.</p>
+    </div>
+  </header>
+
+  <form class="filters" [formGroup]="filtrosForm" (ngSubmit)="consultar()">
+    <label>
+      <span>Desde</span>
+      <input type="date" formControlName="desde" />
+    </label>
+
+    <label>
+      <span>Hasta</span>
+      <input type="date" formControlName="hasta" />
+    </label>
+
+    <button type="submit" class="primary-button" [disabled]="estado() === 'cargando'">
+      {{ estado() === 'cargando' ? 'Consultando...' : 'Consultar' }}
+    </button>
+  </form>
+
+  @if (mensaje()) {
+    <p class="status-message" [class.status-message--error]="estado() === 'error'" role="status">{{ mensaje() }}</p>
+  }
+
+  @if (estado() === 'cargando') {
+    <p class="empty-state">Cargando reporte comercial...</p>
+  }
+
+  @if (reporte(); as data) {
+    <section class="summary" aria-label="Total general">
+      <article>
+        <span>Cantidad de ventas</span>
+        <strong>{{ data.totalGeneral.cantidadVentas | number: '1.0-0' }}</strong>
+      </article>
+      <article>
+        <span>Unidades</span>
+        <strong>{{ data.totalGeneral.unidades | number: '1.0-3' }}</strong>
+      </article>
+      <article>
+        <span>Soles</span>
+        <strong>{{ formatearSoles(data.totalGeneral.soles) }}</strong>
+      </article>
+      <article>
+        <span>Precio promedio</span>
+        <strong>{{ formatearSoles(data.totalGeneral.precioPromedio) }}</strong>
+      </article>
+    </section>
+
+    @if (data.items.length > 0) {
+      <div class="report-table" role="table" aria-label="Ventas por canal">
+        <div class="report-table__row report-table__row--head" role="row">
+          <span>Canal</span>
+          <span>Cantidad ventas</span>
+          <span>Unidades</span>
+          <span>Soles</span>
+          <span>Precio promedio</span>
+        </div>
+
+        @for (item of data.items; track item.canalVenta) {
+          <div class="report-table__row" role="row">
+            <span>{{ item.canalVenta }}</span>
+            <span>{{ item.cantidadVentas | number: '1.0-0' }}</span>
+            <span>{{ item.unidades | number: '1.0-3' }}</span>
+            <span>{{ formatearSoles(item.soles) }}</span>
+            <span>{{ formatearSoles(item.precioPromedio) }}</span>
+          </div>
+        }
+      </div>
+    } @else if (estado() === 'sin-datos') {
+      <p class="empty-state">Sin datos para el rango seleccionado.</p>
+    }
+  }
+</section>
