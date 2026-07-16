@@ -48,6 +48,16 @@ describe('InventarioPageComponent', () => {
     expect(component['productos']()[0]?.nombre).toBe('Polo demo');
   });
 
+  it('shows product name and SKU instead of GUID as the main selector text', async () => {
+    await crearComponente();
+
+    const productSelect = fixture.nativeElement.querySelector('select[formcontrolname="productoId"]') as HTMLSelectElement;
+    const optionTexts = Array.from(productSelect.options).map((option) => option.textContent?.trim());
+
+    expect(optionTexts).toContain('Polo demo - POLO-001');
+    expect(optionTexts).not.toContain('producto-1');
+  });
+
   it('consults product stock and shows available, reserved and free stock', async () => {
     await crearComponente();
 
@@ -154,6 +164,44 @@ describe('InventarioPageComponent', () => {
 
     expect(stockApi.ultimaVarianteProductoId).toBe('producto-1');
     expect(stockApi.ultimaVarianteId).toBe('variante-1');
+  });
+
+  it('consults variant stock automatically when a variant is selected', async () => {
+    productosApi.variantes.set('producto-1', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+    component['consultaForm'].patchValue({
+      productoVarianteId: 'variante-1',
+    });
+    component['alCambiarVariante']();
+    fixture.detectChanges();
+
+    expect(stockApi.obtenerStockProductoVarianteCalls).toBe(1);
+    expect(fixture.nativeElement.textContent).toContain('Producto');
+    expect(fixture.nativeElement.textContent).toContain('Polo demo - POLO-001');
+    expect(fixture.nativeElement.textContent).toContain('Variante');
+    expect(fixture.nativeElement.textContent).toContain('Negro / M - SKU BRO-POLO-NEG-M');
+  });
+
+  it('disables stock adjustment when a product variant is required but missing', async () => {
+    productosApi.variantes.set('producto-1', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['alCambiarProducto']();
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    const adjustButton = buttons.find((button) => button.textContent?.includes('Ajustar stock'));
+
+    expect(fixture.nativeElement.textContent).toContain('Selecciona una variante para consultar o ajustar stock.');
+    expect(adjustButton?.disabled).toBe(true);
   });
 
   it('adjusts available stock and refreshes the result', async () => {

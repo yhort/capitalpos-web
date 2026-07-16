@@ -31,12 +31,12 @@
       <form class="stock-form" [formGroup]="consultaForm" (ngSubmit)="consultarStock()">
         <label class="stock-form__full">
           <span>Producto</span>
-          <input type="text" list="productos-inventario" formControlName="productoId" placeholder="Selecciona o ingresa el ID del producto" (change)="alCambiarProducto()" />
-          <datalist id="productos-inventario">
+          <select formControlName="productoId" (change)="alCambiarProducto()">
+            <option value="">Seleccionar producto</option>
             @for (producto of productosActivos(); track producto.id) {
-              <option [value]="producto.id">{{ producto.nombre }} - {{ producto.codigoSku || 'sin SKU' }}</option>
+              <option [value]="producto.id">{{ obtenerTextoProducto(producto) || 'Producto sin nombre' }}</option>
             }
-          </datalist>
+          </select>
         </label>
 
         @if (variantesEstado() === 'cargando') {
@@ -46,13 +46,16 @@
         @if (variantesActivas().length > 0) {
           <label class="stock-form__full">
             <span>Variante</span>
-            <select formControlName="productoVarianteId">
+            <select formControlName="productoVarianteId" (change)="alCambiarVariante()">
               <option value="">Seleccionar variante</option>
               @for (variante of variantesActivas(); track variante.id) {
                 <option [value]="variante.id">{{ obtenerTextoVariante(variante) }}</option>
               }
             </select>
           </label>
+          @if (!consultaForm.controls.productoVarianteId.value) {
+            <p class="selected-product">Selecciona una variante para consultar o ajustar stock.</p>
+          }
         } @else if (variantesEstado() === 'listo' && consultaForm.controls.productoId.value) {
           <p class="selected-product">Producto sin variantes activas. Se consultará stock del producto base.</p>
         }
@@ -89,6 +92,18 @@
 
       @if (stock(); as stockActual) {
         <dl class="stock-summary">
+          @if (productoSeleccionado(); as producto) {
+            <div>
+              <dt>Producto</dt>
+              <dd>{{ obtenerTextoProducto(producto) }}</dd>
+            </div>
+          }
+          @if (varianteSeleccionada(); as variante) {
+            <div>
+              <dt>Variante</dt>
+              <dd>{{ obtenerTextoVariante(variante) }}</dd>
+            </div>
+          }
           <div>
             <dt>Cantidad disponible</dt>
             <dd>{{ stockActual.cantidadDisponible | number: '1.0-3' }}</dd>
@@ -129,7 +144,7 @@
           </div>
         }
 
-        <button type="submit" class="primary-button stock-form__full" [disabled]="estado() === 'consultando' || estado() === 'ajustando'">
+        <button type="submit" class="primary-button stock-form__full" [disabled]="!puedeAjustarStock()">
           {{ estado() === 'ajustando' ? 'Ajustando...' : 'Ajustar stock' }}
         </button>
       </form>

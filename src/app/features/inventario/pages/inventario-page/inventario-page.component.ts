@@ -51,6 +51,11 @@ export class InventarioPageComponent implements OnInit {
     this.variantes().filter((variante) => variante.activo),
   );
 
+  protected readonly varianteSeleccionada = computed(() => {
+    const varianteId = this.consultaForm.controls.productoVarianteId.value.trim();
+    return this.variantesActivas().find((variante) => variante.id === varianteId) ?? null;
+  });
+
   ngOnInit(): void {
     this.cargarProductos();
   }
@@ -99,6 +104,14 @@ export class InventarioPageComponent implements OnInit {
         this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar las variantes del producto.'));
       },
     });
+  }
+
+  protected alCambiarVariante(): void {
+    this.stock.set(null);
+
+    if (this.consultaForm.controls.productoVarianteId.value) {
+      this.consultarStock();
+    }
   }
 
   protected consultarStock(): void {
@@ -180,6 +193,23 @@ export class InventarioPageComponent implements OnInit {
     const sku = variante.codigoSku ? `SKU ${variante.codigoSku}` : '';
     const barras = variante.codigoBarras ? `CB ${variante.codigoBarras}` : '';
     return [descripcion, sku, barras].filter((valor) => !!valor).join(' - ');
+  }
+
+  protected obtenerTextoProducto(producto: ProductoResponse): string {
+    return [producto.nombre, producto.codigoSku].filter((valor) => !!valor).join(' - ');
+  }
+
+  protected puedeAjustarStock(): boolean {
+    if (
+      this.estado() === 'consultando' ||
+      this.estado() === 'ajustando' ||
+      this.consultaForm.invalid ||
+      this.ajusteForm.invalid
+    ) {
+      return false;
+    }
+
+    return this.validarVarianteSeleccionada().ok;
   }
 
   private ejecutarConsultaStock(productoId: string, productoVarianteId: string | null, mensajeExito: string): void {
