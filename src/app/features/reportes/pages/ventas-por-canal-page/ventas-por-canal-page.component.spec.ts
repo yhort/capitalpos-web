@@ -6,7 +6,10 @@ import { vi } from 'vitest';
 import { ReportesApiService } from '../../data-access/reportes-api.service';
 import { ReporteVentasPorCanalResponse } from '../../models/reporte-ventas-por-canal.model';
 import {
+  calcularParticipacionPorCanal,
   formatearSoles,
+  obtenerCanalLiderPorSoles,
+  obtenerCanalMayorPrecioPromedio,
   obtenerFechaActualLima,
   obtenerPrimerDiaMesActualLima,
   VentasPorCanalPageComponent,
@@ -95,6 +98,71 @@ describe('VentasPorCanalPageComponent', () => {
     expect(textContent).toContain('S/ 54.14');
     expect(textContent).toContain('TIENDA');
     expect(textContent).toContain('MARKETING');
+  });
+
+  it('shows channel distribution section with one bar per channel', async () => {
+    await crearComponente();
+
+    const textContent = fixture.nativeElement.textContent;
+    const bars = fixture.nativeElement.querySelectorAll('.distribution-row__bar span') as NodeListOf<HTMLElement>;
+
+    expect(textContent).toContain('Distribución por canal');
+    expect(bars.length).toBe(2);
+  });
+
+  it('calculates channel participation percentage correctly', async () => {
+    await crearComponente();
+
+    const textContent = fixture.nativeElement.textContent;
+    const bars = fixture.nativeElement.querySelectorAll('.distribution-row__bar span') as NodeListOf<HTMLElement>;
+
+    expect(calcularParticipacionPorCanal(crearReporteResponse().items[0]!, 769490.36)).toBe(55.2);
+    expect(textContent).toContain('55.2%');
+    expect(bars[0]?.style.width).toBe('55.2%');
+  });
+
+  it('does not divide by zero when total soles is zero', async () => {
+    reportesApi.response = of(crearReporteResponse({
+      items: [
+        {
+          canalVenta: 'TIENDA',
+          cantidadVentas: 0,
+          unidades: 0,
+          soles: 0,
+          precioPromedio: 0,
+        },
+      ],
+      totalGeneral: {
+        cantidadVentas: 0,
+        unidades: 0,
+        soles: 0,
+        precioPromedio: 0,
+      },
+    }));
+
+    await crearComponente();
+
+    const textContent = fixture.nativeElement.textContent;
+    const bar = fixture.nativeElement.querySelector('.distribution-row__bar span') as HTMLElement;
+
+    expect(textContent).toContain('Aún no hay ventas para graficar en este rango.');
+    expect(textContent).toContain('0.0%');
+    expect(bar.style.width).toBe('0%');
+  });
+
+  it('shows management summary metrics', async () => {
+    await crearComponente();
+
+    const textContent = fixture.nativeElement.textContent;
+    const items = crearReporteResponse().items;
+
+    expect(obtenerCanalLiderPorSoles(items)?.canalVenta).toBe('TIENDA');
+    expect(obtenerCanalMayorPrecioPromedio(items)?.canalVenta).toBe('TIENDA');
+    expect(textContent).toContain('Canal líder por soles');
+    expect(textContent).toContain('Mayor precio promedio');
+    expect(textContent).toContain('Canales con ventas');
+    expect(textContent).toContain('TIENDA');
+    expect(textContent).toContain('2');
   });
 
   it('formats soles as Peruvian currency', () => {

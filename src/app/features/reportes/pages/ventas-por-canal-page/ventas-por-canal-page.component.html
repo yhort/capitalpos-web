@@ -51,6 +51,50 @@
     </section>
 
     @if (data.items.length > 0) {
+      <section class="management-summary" aria-label="Resumen gerencial">
+        <article>
+          <span>Canal líder por soles</span>
+          <strong>{{ obtenerCanalLider(data.items)?.canalVenta || 'Sin ventas' }}</strong>
+          <small>{{ obtenerCanalLider(data.items) ? formatearSoles(obtenerCanalLider(data.items)!.soles) : 'S/ 0.00' }}</small>
+        </article>
+        <article>
+          <span>Mayor precio promedio</span>
+          <strong>{{ obtenerCanalMayorPrecioPromedio(data.items)?.canalVenta || 'Sin ventas' }}</strong>
+          <small>{{ obtenerCanalMayorPrecioPromedio(data.items) ? formatearSoles(obtenerCanalMayorPrecioPromedio(data.items)!.precioPromedio) : 'S/ 0.00' }}</small>
+        </article>
+        <article>
+          <span>Canales con ventas</span>
+          <strong>{{ contarCanalesConVentas(data.items) | number: '1.0-0' }}</strong>
+          <small>Con soles o ventas registradas</small>
+        </article>
+      </section>
+
+      <section class="channel-distribution" aria-labelledby="distribucion-title">
+        <div class="section-heading">
+          <h3 id="distribucion-title">Distribución por canal</h3>
+          <span>Participación sobre soles</span>
+        </div>
+
+        @if (data.totalGeneral.soles <= 0) {
+          <p class="empty-state">Aún no hay ventas para graficar en este rango.</p>
+        }
+
+        <div class="distribution-list">
+          @for (item of data.items; track item.canalVenta) {
+            @let participacion = calcularParticipacion(item, data.totalGeneral.soles);
+            <div class="distribution-row">
+              <div class="distribution-row__label">
+                <strong>{{ item.canalVenta }}</strong>
+                <span>{{ formatearSoles(item.soles) }} · {{ formatearPorcentaje(participacion) }}</span>
+              </div>
+              <div class="distribution-row__bar" aria-label="Participación {{ item.canalVenta }}">
+                <span [style.width.%]="participacion"></span>
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+
       <div class="report-table" role="table" aria-label="Ventas por canal">
         <div class="report-table__row report-table__row--head" role="row">
           <span>Canal</span>

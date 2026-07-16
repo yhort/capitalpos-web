@@ -4,7 +4,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { ReportesApiService } from '../../data-access/reportes-api.service';
-import { ReporteVentasPorCanalResponse } from '../../models/reporte-ventas-por-canal.model';
+import { ReporteVentasPorCanalItem, ReporteVentasPorCanalResponse } from '../../models/reporte-ventas-por-canal.model';
 
 type ReporteEstado = 'cargando' | 'listo' | 'sin-datos' | 'error';
 
@@ -61,6 +61,26 @@ export class VentasPorCanalPageComponent implements OnInit {
     return formatearSoles(valor);
   }
 
+  protected formatearPorcentaje(valor: number): string {
+    return `${valor.toFixed(1)}%`;
+  }
+
+  protected calcularParticipacion(item: ReporteVentasPorCanalItem, totalSoles: number): number {
+    return calcularParticipacionPorCanal(item, totalSoles);
+  }
+
+  protected obtenerCanalLider(items: readonly ReporteVentasPorCanalItem[]): ReporteVentasPorCanalItem | null {
+    return obtenerCanalLiderPorSoles(items);
+  }
+
+  protected obtenerCanalMayorPrecioPromedio(items: readonly ReporteVentasPorCanalItem[]): ReporteVentasPorCanalItem | null {
+    return obtenerCanalMayorPrecioPromedio(items);
+  }
+
+  protected contarCanalesConVentas(items: readonly ReporteVentasPorCanalItem[]): number {
+    return contarCanalesConVentas(items);
+  }
+
   private obtenerMensajeError(error: unknown): string {
     if (error instanceof HttpErrorResponse) {
       const apiMessage = extraerMensajeApi(error);
@@ -103,6 +123,38 @@ export function formatearSoles(valor: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(valor).replace(/^S\/\s?/, 'S/ ');
+}
+
+export function calcularParticipacionPorCanal(item: ReporteVentasPorCanalItem, totalSoles: number): number {
+  if (totalSoles <= 0) {
+    return 0;
+  }
+
+  return Math.round((item.soles / totalSoles) * 1000) / 10;
+}
+
+export function obtenerCanalLiderPorSoles(
+  items: readonly ReporteVentasPorCanalItem[],
+): ReporteVentasPorCanalItem | null {
+  return items.reduce<ReporteVentasPorCanalItem | null>(
+    (lider, item) => !lider || item.soles > lider.soles ? item : lider,
+    null,
+  );
+}
+
+export function obtenerCanalMayorPrecioPromedio(
+  items: readonly ReporteVentasPorCanalItem[],
+): ReporteVentasPorCanalItem | null {
+  return items
+    .filter((item) => item.unidades > 0)
+    .reduce<ReporteVentasPorCanalItem | null>(
+      (lider, item) => !lider || item.precioPromedio > lider.precioPromedio ? item : lider,
+      null,
+    );
+}
+
+export function contarCanalesConVentas(items: readonly ReporteVentasPorCanalItem[]): number {
+  return items.filter((item) => item.soles > 0 || item.cantidadVentas > 0).length;
 }
 
 function obtenerPartesFechaLima(fecha: Date): { readonly fecha: string; readonly year: string; readonly month: string } {
