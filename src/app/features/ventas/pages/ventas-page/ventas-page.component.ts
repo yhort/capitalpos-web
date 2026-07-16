@@ -16,6 +16,8 @@ import {
 } from '../../../cpe/pages/emitir-cpe-page/emitir-cpe-page.component';
 import { StockApiService } from '../../../inventario/data-access/stock-api.service';
 import { StockProductoResponse } from '../../../inventario/models/stock.model';
+import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
+import { ProductoVarianteResponse } from '../../../productos/models/producto.model';
 import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse, CrearClienteRequest } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
@@ -23,6 +25,7 @@ import { CrearVentaRequest, EmitirCpeDesdeVentaRequest, VentaResponse } from '..
 
 interface PosItem {
   readonly producto: ProductoResponse;
+  readonly variante: ProductoVarianteResponse | null;
   readonly cantidad: number;
 }
 
@@ -34,6 +37,16 @@ type StockProductoEstado =
   | {
       readonly estado: 'disponible';
       readonly stock: StockProductoResponse;
+    };
+
+type VariantesProductoEstado =
+  | {
+      readonly estado: 'cargando' | 'no-disponible';
+      readonly variantes: readonly ProductoVarianteResponse[];
+    }
+  | {
+      readonly estado: 'disponible';
+      readonly variantes: readonly ProductoVarianteResponse[];
     };
 
 type PosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
@@ -49,6 +62,7 @@ const IGV = 0.18;
 })
 export class VentasPageComponent implements OnInit {
   private readonly posApi = inject(PosApiService);
+  private readonly productosApi = inject(ProductosApiService);
   private readonly stockApi = inject(StockApiService);
   private readonly empresaActivaService = inject(EmpresaActivaService);
   private readonly formBuilder = inject(FormBuilder);
@@ -58,6 +72,8 @@ export class VentasPageComponent implements OnInit {
   protected readonly busquedaProducto = signal('');
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
   protected readonly stockProductos = signal<Readonly<Record<string, StockProductoEstado>>>({});
+  protected readonly variantesProductos = signal<Readonly<Record<string, VariantesProductoEstado>>>({});
+  protected readonly stockVariantes = signal<Readonly<Record<string, StockProductoEstado>>>({});
   protected readonly clientes = signal<readonly ClienteResponse[]>([]);
   protected readonly items = signal<readonly PosItem[]>([]);
   protected readonly ultimaVenta = signal<VentaResponse | null>(null);
@@ -68,6 +84,7 @@ export class VentasPageComponent implements OnInit {
 
   protected readonly productoForm = this.formBuilder.nonNullable.group({
     productoId: ['', Validators.required],
+    productoVarianteId: [''],
     cantidad: [1, [Validators.required, Validators.min(0.01)]],
   });
 
@@ -168,7 +185,7 @@ export class VentasPageComponent implements OnInit {
       return;
     }
 
-    const { productoId, cantidad } = this.productoForm.getRawValue();
+    const { productoId, productoVarianteId, cantidad } = this.productoForm.getRawValue();
     const producto = this.productosActivos().find((item) => item.id === productoId);
 
     if (!producto) {
@@ -176,53 +193,93 @@ export class VentasPageComponent implements OnInit {
       return;
     }
 
-    const stockLibre = this.obtenerStockLibre(producto.id);
+    const variantesActivas = this.obtenerVariantesActivas(producto.id);
+    const requiereVariante = variantesActivas.length > 0;
+    const variante = requiereVariante
+      ? variantesActivas.find((item) => item.id === productoVarianteId) ?? null
+      : null;
+
+    if (requiereVariante && !variante) {
+      this.mensaje.set('Selecciona una variante antes de agregar el producto.');
+      return;
+    }
+
+    const stockLibre = variante
+      ? this.obtenerStockLibreVariante(producto.id, variante.id)
+      : this.obtenerStockLibre(producto.id);
 
     if (stockLibre === null) {
-      this.mensaje.set('Stock no disponible para este producto.');
+      this.mensaje.set(variante
+        ? 'Stock no disponible para la variante seleccionada.'
+        : 'Stock no disponible para este producto.');
       return;
     }
 
     if (stockLibre <= 0) {
-      this.mensaje.set('Sin stock disponible.');
+      this.mensaje.set(variante
+        ? 'La variante seleccionada no tiene stock disponible.'
+        : 'Sin stock disponible.');
       return;
     }
 
     const cantidadEnCarrito = this.items()
-      .filter((item) => item.producto.id === producto.id)
+      .filter((item) => item.producto.id === producto.id && item.variante?.id === variante?.id)
       .reduce((total, item) => total + item.cantidad, 0);
 
     if (redondear(cantidadEnCarrito + cantidad) > stockLibre) {
-      this.mensaje.set('Stock insuficiente para la cantidad solicitada.');
+      this.mensaje.set(variante
+        ? 'Stock insuficiente para la variante seleccionada.'
+        : 'Stock insuficiente para la cantidad solicitada.');
       return;
     }
 
     this.items.update((items) => {
-      const existente = items.find((item) => item.producto.id === producto.id);
+      const existente = items.find((item) =>
+        item.producto.id === producto.id && item.variante?.id === variante?.id,
+      );
 
       if (existente) {
         return items.map((item) =>
-          item.producto.id === producto.id
+          item.producto.id === producto.id && item.variante?.id === variante?.id
             ? { ...item, cantidad: redondear(item.cantidad + cantidad) }
             : item,
         );
       }
 
-      return [...items, { producto, cantidad }];
+      return [...items, { producto, variante, cantidad }];
     });
 
     this.ultimaVenta.set(null);
     this.mensaje.set('');
-    this.productoForm.patchValue({ productoId: '', cantidad: 1 });
+    this.productoForm.patchValue({ productoId: '', productoVarianteId: '', cantidad: 1 });
   }
 
-  protected quitarProducto(productoId: string): void {
+  protected quitarProducto(productoId: string, productoVarianteId: string | null): void {
     if (this.estado() === 'guardando') {
       return;
     }
 
-    this.items.update((items) => items.filter((item) => item.producto.id !== productoId));
+    this.items.update((items) => items.filter((item) =>
+      item.producto.id !== productoId || item.variante?.id !== productoVarianteId,
+    ));
     this.ultimaVenta.set(null);
+  }
+
+  protected alCambiarProducto(): void {
+    const productoId = this.productoForm.controls.productoId.value;
+    this.productoForm.patchValue({ productoVarianteId: '' });
+
+    if (productoId && !this.obtenerVariantes(productoId)) {
+      this.cargarVariantesProducto(productoId);
+    }
+  }
+
+  protected alCambiarVariante(): void {
+    const { productoId, productoVarianteId } = this.productoForm.getRawValue();
+
+    if (productoId && productoVarianteId) {
+      this.cargarStockVariante(productoId, productoVarianteId);
+    }
   }
 
   protected actualizarBusquedaProducto(event: Event): void {
@@ -286,7 +343,16 @@ export class VentasPageComponent implements OnInit {
     }
 
     const request = this.construirVentaRequest();
-    const productoIdsVendidos = [...new Set(this.items().map((item) => item.producto.id))];
+    const itemsVendidos = this.items();
+    const productoIdsVendidos = [...new Set(itemsVendidos
+      .filter((item) => !item.variante)
+      .map((item) => item.producto.id))];
+    const variantesVendidas = itemsVendidos
+      .filter((item): item is PosItem & { readonly variante: ProductoVarianteResponse } => !!item.variante)
+      .map((item) => ({
+        productoId: item.producto.id,
+        varianteId: item.variante.id,
+      }));
     this.estado.set('guardando');
     this.mensaje.set('');
 
@@ -296,6 +362,7 @@ export class VentasPageComponent implements OnInit {
         this.items.set([]);
         this.limpiarResultadoEmision();
         this.refrescarStockProductos(productoIdsVendidos);
+        this.refrescarStockVariantes(variantesVendidas);
         this.estado.set('listo');
         this.mensaje.set(`Venta registrada correctamente. ID: ${venta.id}. Total: S/ ${venta.total.toFixed(2)}.`);
       },
@@ -377,6 +444,26 @@ export class VentasPageComponent implements OnInit {
     return stock?.estado === 'disponible' ? stock.stock.stockLibre : null;
   }
 
+  protected obtenerStockVariante(productoId: string, varianteId: string): StockProductoEstado | null {
+    return this.stockVariantes()[crearClaveVariante(productoId, varianteId)] ?? null;
+  }
+
+  protected obtenerStockLibreVariante(productoId: string, varianteId: string): number | null {
+    const stock = this.obtenerStockVariante(productoId, varianteId);
+    return stock?.estado === 'disponible' ? stock.stock.stockLibre : null;
+  }
+
+  protected obtenerVariantes(productoId: string): VariantesProductoEstado | null {
+    return this.variantesProductos()[productoId] ?? null;
+  }
+
+  protected obtenerVariantesActivas(productoId: string): readonly ProductoVarianteResponse[] {
+    const variantes = this.obtenerVariantes(productoId);
+    return variantes?.estado === 'disponible'
+      ? variantes.variantes.filter((variante) => variante.activo)
+      : [];
+  }
+
   protected obtenerTextoStock(productoId: string): string {
     const stock = this.obtenerStock(productoId);
 
@@ -395,9 +482,60 @@ export class VentasPageComponent implements OnInit {
     return `Stock libre: ${formatearCantidad(stock.stock.stockLibre)}`;
   }
 
+  protected obtenerTextoVariantes(productoId: string): string {
+    const variantes = this.obtenerVariantes(productoId);
+
+    if (!variantes || variantes.estado === 'cargando') {
+      return 'Consultando variantes...';
+    }
+
+    if (variantes.estado === 'no-disponible') {
+      return 'Variantes no disponibles.';
+    }
+
+    const activas = variantes.variantes.filter((variante) => variante.activo).length;
+    return activas > 0 ? `${activas} variantes activas` : 'Sin variantes activas';
+  }
+
+  protected obtenerTextoVariante(variante: ProductoVarianteResponse): string {
+    const atributos = [variante.color, variante.talla].filter((valor) => !!valor);
+    const descripcion = atributos.length > 0 ? atributos.join(' / ') : 'Variante';
+    const sku = variante.codigoSku ? `SKU ${variante.codigoSku}` : '';
+    const barras = variante.codigoBarras ? `CB ${variante.codigoBarras}` : '';
+    return [descripcion, sku, barras].filter((valor) => !!valor).join(' - ');
+  }
+
+  protected obtenerDescripcionItem(item: PosItem): string {
+    return item.variante
+      ? `${item.producto.nombre} - ${this.obtenerTextoVariante(item.variante)}`
+      : item.producto.nombre;
+  }
+
+  protected obtenerStockLibreItem(item: PosItem): number | null {
+    return item.variante
+      ? this.obtenerStockLibreVariante(item.producto.id, item.variante.id)
+      : this.obtenerStockLibre(item.producto.id);
+  }
+
   protected puedeAgregarProducto(productoId: string): boolean {
     const stockLibre = this.obtenerStockLibre(productoId);
     return stockLibre !== null && stockLibre > 0;
+  }
+
+  protected puedeAgregarSeleccionActual(): boolean {
+    const { productoId, productoVarianteId } = this.productoForm.getRawValue();
+
+    if (!productoId) {
+      return false;
+    }
+
+    const variantesActivas = this.obtenerVariantesActivas(productoId);
+
+    if (variantesActivas.length > 0) {
+      return !!productoVarianteId && (this.obtenerStockLibreVariante(productoId, productoVarianteId) ?? 0) > 0;
+    }
+
+    return this.puedeAgregarProducto(productoId);
   }
 
   private construirVentaRequest(): CrearVentaRequest {
@@ -408,7 +546,7 @@ export class VentasPageComponent implements OnInit {
       clienteId: normalizarTextoNullable(this.clienteForm.controls.clienteId.value),
       detalles: this.items().map((item) => ({
         productoId: item.producto.id,
-        productoVarianteId: null,
+        productoVarianteId: item.variante?.id ?? null,
         cantidad: item.cantidad,
         precioUnitario: item.producto.precioVenta,
         igv: this.calcularIgvItem(item),
@@ -459,6 +597,8 @@ export class VentasPageComponent implements OnInit {
 
     if (productosActivos.length === 0) {
       this.stockProductos.set({});
+      this.variantesProductos.set({});
+      this.stockVariantes.set({});
       this.estado.set('listo');
       this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados.' : '');
       return;
@@ -473,28 +613,22 @@ export class VentasPageComponent implements OnInit {
         } satisfies StockProductoEstado,
       ]),
     ));
+    this.variantesProductos.set(Object.fromEntries(
+      productosActivos.map((producto) => [
+        producto.id,
+        {
+          estado: 'cargando',
+          variantes: [],
+        } satisfies VariantesProductoEstado,
+      ]),
+    ));
 
-    forkJoin(
-      productosActivos.map((producto) =>
-        this.stockApi.obtenerStockProducto(producto.id).pipe(
-          map((stock) => [
-            producto.id,
-            {
-              estado: 'disponible',
-              stock,
-            } satisfies StockProductoEstado,
-          ] as const),
-          catchError(() => of([
-            producto.id,
-            {
-              estado: 'no-disponible',
-              stock: null,
-            } satisfies StockProductoEstado,
-          ] as const)),
-        ),
-      ),
-    ).subscribe((stockEntries) => {
+    forkJoin({
+      stockEntries: forkJoin(productosActivos.map((producto) => this.obtenerStockProductoEntry(producto.id))),
+      variantesEntries: forkJoin(productosActivos.map((producto) => this.obtenerVariantesProductoEntry(producto.id))),
+    }).subscribe(({ stockEntries, variantesEntries }) => {
       this.stockProductos.set(Object.fromEntries(stockEntries));
+      this.variantesProductos.set(Object.fromEntries(variantesEntries));
       this.estado.set('listo');
       this.mensaje.set(mostrarMensaje ? 'Productos, clientes y stock actualizados.' : '');
     });
@@ -517,31 +651,145 @@ export class VentasPageComponent implements OnInit {
       ])),
     });
 
-    forkJoin(
-      productoIds.map((productoId) =>
-        this.stockApi.obtenerStockProducto(productoId).pipe(
-          map((stock) => [
-            productoId,
-            {
-              estado: 'disponible',
-              stock,
-            } satisfies StockProductoEstado,
-          ] as const),
-          catchError(() => of([
-            productoId,
-            {
-              estado: 'no-disponible',
-              stock: null,
-            } satisfies StockProductoEstado,
-          ] as const)),
-        ),
-      ),
-    ).subscribe((stockEntries) => {
+    forkJoin(productoIds.map((productoId) => this.obtenerStockProductoEntry(productoId))).subscribe((stockEntries) => {
       this.stockProductos.update((stockPorProducto) => ({
         ...stockPorProducto,
         ...Object.fromEntries(stockEntries),
       }));
     });
+  }
+
+  private cargarVariantesProducto(productoId: string): void {
+    this.actualizarVariantesProducto(productoId, {
+      estado: 'cargando',
+      variantes: [],
+    });
+
+    this.obtenerVariantesProductoEntry(productoId).subscribe(([id, variantes]) => {
+      this.actualizarVariantesProducto(id, variantes);
+    });
+  }
+
+  private cargarStockVariante(productoId: string, varianteId: string): void {
+    const clave = crearClaveVariante(productoId, varianteId);
+
+    this.stockVariantes.update((stockVariantes) => ({
+      ...stockVariantes,
+      [clave]: {
+        estado: 'cargando',
+        stock: null,
+      },
+    }));
+
+    this.obtenerStockVarianteEntry(productoId, varianteId).subscribe(([stockClave, stock]) => {
+      this.stockVariantes.update((stockVariantes) => ({
+        ...stockVariantes,
+        [stockClave]: stock,
+      }));
+    });
+  }
+
+  private refrescarStockVariantes(
+    variantes: readonly { readonly productoId: string; readonly varianteId: string }[],
+  ): void {
+    if (variantes.length === 0) {
+      return;
+    }
+
+    const variantesUnicas = Array.from(
+      new Map(variantes.map((variante) => [
+        crearClaveVariante(variante.productoId, variante.varianteId),
+        variante,
+      ])).values(),
+    );
+
+    this.stockVariantes.update((stockActual) => ({
+      ...stockActual,
+      ...Object.fromEntries(variantesUnicas.map((variante) => [
+        crearClaveVariante(variante.productoId, variante.varianteId),
+        {
+          estado: 'cargando',
+          stock: null,
+        } satisfies StockProductoEstado,
+      ])),
+    }));
+
+    forkJoin(
+      variantesUnicas.map((variante) =>
+        this.obtenerStockVarianteEntry(variante.productoId, variante.varianteId),
+      ),
+    ).subscribe((stockEntries) => {
+      this.stockVariantes.update((stockPorVariante) => ({
+        ...stockPorVariante,
+        ...Object.fromEntries(stockEntries),
+      }));
+    });
+  }
+
+  private obtenerStockProductoEntry(productoId: string) {
+    return this.stockApi.obtenerStockProducto(productoId).pipe(
+      map((stock) => [
+        productoId,
+        {
+          estado: 'disponible',
+          stock,
+        } satisfies StockProductoEstado,
+      ] as const),
+      catchError(() => of([
+        productoId,
+        {
+          estado: 'no-disponible',
+          stock: null,
+        } satisfies StockProductoEstado,
+      ] as const)),
+    );
+  }
+
+  private obtenerStockVarianteEntry(productoId: string, varianteId: string) {
+    const clave = crearClaveVariante(productoId, varianteId);
+
+    return this.stockApi.obtenerStockProductoVariante(productoId, varianteId).pipe(
+      map((stock) => [
+        clave,
+        {
+          estado: 'disponible',
+          stock,
+        } satisfies StockProductoEstado,
+      ] as const),
+      catchError(() => of([
+        clave,
+        {
+          estado: 'no-disponible',
+          stock: null,
+        } satisfies StockProductoEstado,
+      ] as const)),
+    );
+  }
+
+  private obtenerVariantesProductoEntry(productoId: string) {
+    return this.productosApi.listarVariantes(productoId).pipe(
+      map((variantes) => [
+        productoId,
+        {
+          estado: 'disponible',
+          variantes,
+        } satisfies VariantesProductoEstado,
+      ] as const),
+      catchError(() => of([
+        productoId,
+        {
+          estado: 'no-disponible',
+          variantes: [],
+        } satisfies VariantesProductoEstado,
+      ] as const)),
+    );
+  }
+
+  private actualizarVariantesProducto(productoId: string, state: VariantesProductoEstado): void {
+    this.variantesProductos.update((variantes) => ({
+      ...variantes,
+      [productoId]: state,
+    }));
   }
 
   private obtenerMensajeError(error: unknown, fallback: string): string {
@@ -615,6 +863,10 @@ function formatearCantidad(valor: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3,
   }).format(valor);
+}
+
+function crearClaveVariante(productoId: string, varianteId: string): string {
+  return `${productoId}:${varianteId}`;
 }
 
 function normalizarTextoNullable(valor: string): string | null {

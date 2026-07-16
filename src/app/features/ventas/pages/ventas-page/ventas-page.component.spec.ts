@@ -9,6 +9,8 @@ import { ApiResponse } from '../../../cpe/models/api-response.model';
 import { CpeEmisionResponse } from '../../../cpe/models/cpe-emision-response.model';
 import { StockApiService } from '../../../inventario/data-access/stock-api.service';
 import { StockProductoResponse } from '../../../inventario/models/stock.model';
+import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
+import { ProductoVarianteResponse } from '../../../productos/models/producto.model';
 import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
@@ -19,10 +21,12 @@ describe('VentasPageComponent', () => {
   let fixture: ComponentFixture<VentasPageComponent>;
   let component: VentasPageComponent;
   let posApi: PosApiServiceFake;
+  let productosApi: ProductosApiServiceFake;
   let stockApi: StockApiServiceFake;
 
   beforeEach(async () => {
     posApi = new PosApiServiceFake();
+    productosApi = new ProductosApiServiceFake();
     stockApi = new StockApiServiceFake();
 
     await TestBed.configureTestingModule({
@@ -31,6 +35,10 @@ describe('VentasPageComponent', () => {
         {
           provide: PosApiService,
           useValue: posApi,
+        },
+        {
+          provide: ProductosApiService,
+          useValue: productosApi,
         },
         {
           provide: StockApiService,
@@ -135,6 +143,182 @@ describe('VentasPageComponent', () => {
     });
     expect(component['ultimaVenta']()?.id).toBe('venta-1');
     expect(component['mensaje']()).toContain('Venta registrada correctamente.');
+  });
+
+  it('keeps adding and selling products without variants as before', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest?.detalles).toEqual([
+      expect.objectContaining({
+        productoId: 'producto-1',
+        productoVarianteId: null,
+        cantidad: 1,
+      }),
+    ]);
+  });
+
+  it('loads active variants and does not add variant products without selecting one', async () => {
+    posApi.productos = [
+      ...posApi.productos,
+      crearProductoResponse({
+        id: 'producto-2',
+        nombre: 'Polo Brooklyn',
+        codigoSku: 'POL-BRO',
+      }),
+    ];
+    productosApi.variantes.set('producto-2', [
+      crearVarianteResponse({
+        id: 'variante-1',
+        productoId: 'producto-2',
+        talla: 'M',
+        color: 'Negro',
+        codigoSku: 'POL-BRO-NEG-M',
+      }),
+      crearVarianteResponse({
+        id: 'variante-2',
+        productoId: 'producto-2',
+        talla: 'S',
+        color: 'Blanco',
+        codigoSku: 'POL-BRO-BLA-S',
+        activo: false,
+      }),
+    ]);
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-2',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+
+    expect(productosApi.listarVariantesCalls.get('producto-2')).toBe(1);
+    expect(component['obtenerVariantesActivas']('producto-2').map((variante) => variante.id)).toEqual(['variante-1']);
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('Selecciona una variante antes de agregar el producto.');
+  });
+
+  it('queries variant stock when selecting a variant', async () => {
+    posApi.productos = [
+      crearProductoResponse({
+        id: 'producto-2',
+        nombre: 'Polo Brooklyn',
+      }),
+    ];
+    productosApi.variantes.set('producto-2', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+    });
+    component['alCambiarVariante']();
+
+    expect(stockApi.obtenerStockProductoVarianteCalls.get('producto-2:variante-1')).toBe(1);
+    expect(component['obtenerStockLibreVariante']('producto-2', 'variante-1')).toBe(4);
+  });
+
+  it('does not add selected variants without free stock', async () => {
+    posApi.productos = [crearProductoResponse({ id: 'producto-2' })];
+    productosApi.variantes.set('producto-2', [crearVarianteResponse()]);
+    stockApi.stocksVariantes.set('producto-2:variante-1', crearStockResponse({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      cantidadDisponible: 0,
+      stockLibre: 0,
+    }));
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      cantidad: 1,
+    });
+    component['alCambiarVariante']();
+    component['agregarProducto']();
+
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('La variante seleccionada no tiene stock disponible.');
+  });
+
+  it('does not add selected variants when quantity exceeds variant free stock', async () => {
+    posApi.productos = [crearProductoResponse({ id: 'producto-2' })];
+    productosApi.variantes.set('producto-2', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      cantidad: 5,
+    });
+    component['alCambiarVariante']();
+    component['agregarProducto']();
+
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('Stock insuficiente para la variante seleccionada.');
+  });
+
+  it('shows selected variant details in the cart and sends productoVarianteId when selling', async () => {
+    posApi.productos = [
+      crearProductoResponse({
+        id: 'producto-2',
+        nombre: 'Polo Brooklyn',
+        precioVenta: 20,
+      }),
+    ];
+    productosApi.variantes.set('producto-2', [crearVarianteResponse({
+      color: 'Negro',
+      talla: 'M',
+      codigoSku: 'POL-BRO-NEG-M',
+      codigoBarras: '775000000002',
+    })]);
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      cantidad: 2,
+    });
+    component['alCambiarVariante']();
+    component['agregarProducto']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Polo Brooklyn - Negro / M - SKU POL-BRO-NEG-M - CB 775000000002');
+
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest?.detalles).toEqual([
+      expect.objectContaining({
+        productoId: 'producto-2',
+        productoVarianteId: 'variante-1',
+        cantidad: 2,
+      }),
+    ]);
+  });
+
+  it('refreshes sold variant stock after registering a sale successfully', async () => {
+    posApi.productos = [crearProductoResponse({ id: 'producto-2' })];
+    productosApi.variantes.set('producto-2', [crearVarianteResponse()]);
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      cantidad: 1,
+    });
+    component['alCambiarVariante']();
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(stockApi.obtenerStockProductoVarianteCalls.get('producto-2:variante-1')).toBe(2);
+    expect(component['items']()).toEqual([]);
   });
 
   it('does not add products without free stock', async () => {
@@ -365,11 +549,37 @@ class PosApiServiceFake {
   }
 }
 
+class ProductosApiServiceFake {
+  readonly listarVariantesCalls = new Map<string, number>();
+  readonly variantes = new Map<string, readonly ProductoVarianteResponse[]>([
+    ['producto-1', []],
+  ]);
+
+  listarVariantes(productoId: string) {
+    this.listarVariantesCalls.set(
+      productoId,
+      (this.listarVariantesCalls.get(productoId) ?? 0) + 1,
+    );
+
+    return of(this.variantes.get(productoId) ?? []);
+  }
+}
+
 class StockApiServiceFake {
   readonly productosConError = new Set<string>();
   readonly obtenerStockProductoCalls = new Map<string, number>();
+  readonly obtenerStockProductoVarianteCalls = new Map<string, number>();
   readonly stocks = new Map<string, StockProductoResponse>([
     ['producto-1', crearStockResponse()],
+  ]);
+  readonly stocksVariantes = new Map<string, StockProductoResponse>([
+    ['producto-2:variante-1', crearStockResponse({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      cantidadDisponible: 4,
+      cantidadReservada: 0,
+      stockLibre: 4,
+    })],
   ]);
 
   obtenerStockProducto(productoId: string) {
@@ -384,6 +594,49 @@ class StockApiServiceFake {
 
     return of(this.stocks.get(productoId) ?? crearStockResponse({ productoId }));
   }
+
+  obtenerStockProductoVariante(productoId: string, productoVarianteId: string) {
+    const clave = `${productoId}:${productoVarianteId}`;
+    this.obtenerStockProductoVarianteCalls.set(
+      clave,
+      (this.obtenerStockProductoVarianteCalls.get(clave) ?? 0) + 1,
+    );
+
+    return of(this.stocksVariantes.get(clave) ?? crearStockResponse({
+      productoId,
+      productoVarianteId,
+    }));
+  }
+}
+
+function crearProductoResponse(overrides: Partial<ProductoResponse> = {}): ProductoResponse {
+  return {
+    id: 'producto-1',
+    empresaId: 'empresa-1',
+    nombre: 'Polo',
+    codigoSku: 'POLO-001',
+    codigoBarras: '',
+    precioVenta: 11.8,
+    costo: null,
+    activo: true,
+    fechaCreacion: '2026-07-11T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearVarianteResponse(overrides: Partial<ProductoVarianteResponse> = {}): ProductoVarianteResponse {
+  return {
+    id: 'variante-1',
+    empresaId: 'empresa-1',
+    productoId: 'producto-2',
+    talla: 'M',
+    color: 'Negro',
+    codigoSku: 'POL-BRO-NEG-M',
+    codigoBarras: '775000000002',
+    activo: true,
+    fechaCreacion: '2026-07-15T10:00:00Z',
+    ...overrides,
+  };
 }
 
 function crearStockResponse(overrides: Partial<StockProductoResponse> = {}): StockProductoResponse {

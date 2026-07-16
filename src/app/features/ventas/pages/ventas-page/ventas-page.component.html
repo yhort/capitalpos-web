@@ -29,7 +29,7 @@
 
         <label>
           <span>Producto</span>
-          <select formControlName="productoId" [disabled]="productosActivos().length === 0 || estado() === 'guardando'">
+          <select formControlName="productoId" [disabled]="productosActivos().length === 0 || estado() === 'guardando'" (change)="alCambiarProducto()">
             <option value="">Seleccionar</option>
             @for (producto of productosFiltrados(); track producto.id) {
               <option [value]="producto.id">
@@ -39,12 +39,57 @@
           </select>
         </label>
 
+        @if (productoForm.controls.productoId.value; as productoId) {
+          @if (obtenerVariantesActivas(productoId).length > 0) {
+            <label class="inline-form__full">
+              <span>Variante</span>
+              <select formControlName="productoVarianteId" [disabled]="estado() === 'guardando'" (change)="alCambiarVariante()">
+                <option value="">Seleccionar variante</option>
+                @for (variante of obtenerVariantesActivas(productoId); track variante.id) {
+                  <option [value]="variante.id">
+                    {{ obtenerTextoVariante(variante) }}
+                  </option>
+                }
+              </select>
+            </label>
+
+            @if (productoForm.controls.productoVarianteId.value; as varianteId) {
+              <div class="variant-stock inline-form__full">
+                @if (obtenerStockVariante(productoId, varianteId); as stockEstado) {
+                  @if (stockEstado.estado === 'disponible') {
+                    <dl>
+                      <div>
+                        <dt>Disp.</dt>
+                        <dd>{{ stockEstado.stock.cantidadDisponible | number: '1.0-3' }}</dd>
+                      </div>
+                      <div>
+                        <dt>Res.</dt>
+                        <dd>{{ stockEstado.stock.cantidadReservada | number: '1.0-3' }}</dd>
+                      </div>
+                      <div>
+                        <dt>Libre</dt>
+                        <dd>{{ stockEstado.stock.stockLibre | number: '1.0-3' }}</dd>
+                      </div>
+                    </dl>
+                  } @else if (stockEstado.estado === 'cargando') {
+                    <p>Consultando stock de variante...</p>
+                  } @else {
+                    <p>Stock no disponible para la variante seleccionada.</p>
+                  }
+                } @else {
+                  <p>Selecciona una variante para consultar su stock.</p>
+                }
+              </div>
+            }
+          }
+        }
+
         <label>
           <span>Cantidad</span>
           <input type="number" min="0.01" step="0.01" formControlName="cantidad" />
         </label>
 
-        <button type="submit" class="primary-button" [disabled]="estado() === 'cargando' || estado() === 'guardando' || productosActivos().length === 0 || (!!productoForm.controls.productoId.value && !puedeAgregarProducto(productoForm.controls.productoId.value))">
+        <button type="submit" class="primary-button" [disabled]="estado() === 'cargando' || estado() === 'guardando' || productosActivos().length === 0 || !puedeAgregarSeleccionActual()">
           Agregar
         </button>
       </form>
@@ -56,6 +101,7 @@
               <div>
                 <strong>{{ producto.nombre }}</strong>
                 <span>{{ producto.codigoSku || 'sin SKU' }}</span>
+                <span>{{ obtenerTextoVariantes(producto.id) }}</span>
               </div>
 
               @if (obtenerStock(producto.id); as stockEstado) {
@@ -178,13 +224,13 @@
             <span></span>
           </div>
 
-          @for (item of items(); track item.producto.id) {
+          @for (item of items(); track item.producto.id + ':' + (item.variante?.id || 'base')) {
             <div class="sale-items__row" role="row">
-              <span>{{ item.producto.nombre }}</span>
+              <span>{{ obtenerDescripcionItem(item) }}</span>
               <span>{{ item.cantidad | number: '1.2-2' }}</span>
-              <span>{{ obtenerStockLibre(item.producto.id) === null ? 'No disponible' : (obtenerStockLibre(item.producto.id) | number: '1.0-3') }}</span>
+              <span>{{ obtenerStockLibreItem(item) === null ? 'No disponible' : (obtenerStockLibreItem(item) | number: '1.0-3') }}</span>
               <span>S/ {{ calcularTotalItem(item) | number: '1.2-2' }}</span>
-              <button type="button" class="icon-button" (click)="quitarProducto(item.producto.id)" aria-label="Quitar producto">
+              <button type="button" class="icon-button" (click)="quitarProducto(item.producto.id, item.variante?.id ?? null)" aria-label="Quitar producto">
                 x
               </button>
             </div>
