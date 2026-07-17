@@ -30,9 +30,9 @@ export const routes: Routes = [
             },
             {
                 path: 'dashboard',
-                title: 'Dashboard | CapitalPOS',
+                title: 'Dashboard comercial | CapitalPOS',
                 data: {
-                    pageTitle: 'Dashboard',
+                    pageTitle: 'Dashboard comercial',
                     breadcrumb: [{ label: 'Dashboard' }],
                 },
                 loadComponent: () =>

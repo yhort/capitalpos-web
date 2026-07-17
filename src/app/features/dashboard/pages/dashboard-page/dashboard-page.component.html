@@ -1,26 +1,140 @@
 <section class="dashboard-page">
-    <header class="dashboard-page__header">
-        <h2>Dashboard</h2>
-        <p>
-            Bienvenido a CapitalPOS. Desde aquí podrás acceder a los principales
-            módulos del sistema.
-        </p>
-    </header>
-
-    <div class="dashboard-page__summary" aria-label="Resumen del sistema">
-        <article class="dashboard-page__card">
-            <h3>Facturación CPE</h3>
-            <p>Emisión y seguimiento de comprobantes electrónicos.</p>
-        </article>
-
-        <article class="dashboard-page__card">
-            <h3>Ventas</h3>
-            <p>Gestión de ventas y operaciones comerciales.</p>
-        </article>
-
-        <article class="dashboard-page__card">
-            <h3>Inventario</h3>
-            <p>Consulta de productos, almacenes y existencias.</p>
-        </article>
+  <header class="dashboard-page__header">
+    <div>
+      <h2>Dashboard comercial</h2>
+      <p>Ventas del día, productos destacados y alertas de inventario.</p>
     </div>
+
+    <button type="button" class="primary-button" (click)="cargarDashboard()" [disabled]="estado() === 'cargando'">
+      {{ estado() === 'cargando' ? 'Actualizando...' : 'Actualizar' }}
+    </button>
+  </header>
+
+  @if (mensaje()) {
+    <p class="status-message status-message--error" role="status">{{ mensaje() }}</p>
+  }
+
+  @if (estado() === 'cargando') {
+    <p class="empty-state">Cargando dashboard comercial...</p>
+  }
+
+  @if (dashboard(); as data) {
+    <section class="dashboard-meta" aria-label="Fecha de consulta">
+      <article>
+        <span>Fecha consultada</span>
+        <strong>{{ formatearFecha(data.fecha) }}</strong>
+      </article>
+      <article>
+        <span>Última actualización</span>
+        <strong>{{ formatearFechaHora(data.ultimaActualizacion) }}</strong>
+      </article>
+    </section>
+
+    @if (estado() === 'sin-ventas') {
+      <p class="status-message" role="status">Aún no hay ventas registradas para hoy.</p>
+    }
+
+    <section class="summary" aria-label="Resumen comercial">
+      <article>
+        <span>Ventas de hoy</span>
+        <strong>{{ formatearSoles(data.resumen.importeTotalVendido) }}</strong>
+      </article>
+      <article>
+        <span>Operaciones</span>
+        <strong>{{ data.resumen.cantidadOperaciones | number: '1.0-0' }}</strong>
+      </article>
+      <article>
+        <span>Unidades vendidas</span>
+        <strong>{{ data.resumen.unidadesVendidas | number: '1.0-3' }}</strong>
+      </article>
+      <article>
+        <span>Canal líder</span>
+        <strong>{{ data.resumen.canalLider?.canalVenta || 'Sin ventas' }}</strong>
+        <small>{{ data.resumen.canalLider ? formatearSoles(data.resumen.canalLider.importeVendido) : 'Sin ventas' }}</small>
+      </article>
+    </section>
+
+    <div class="dashboard-grid">
+      <section class="panel" aria-labelledby="top-productos-title">
+        <div class="section-heading">
+          <h3 id="top-productos-title">Top 5 productos</h3>
+          <span>Unidades e importe vendido</span>
+        </div>
+
+        @if (data.topProductos.length > 0) {
+          <div class="top-products">
+            @for (item of data.topProductos; track item.productoId + '-' + item.productoVarianteId; let index = $index) {
+              @let barra = calcularBarraTopProducto(item, data.topProductos);
+              <article class="top-product">
+                <span class="top-product__position">{{ index + 1 }}</span>
+                <div class="top-product__content">
+                  <div class="top-product__title">
+                    <strong>{{ item.producto }}</strong>
+                    <span>{{ describirVariante(item) }}</span>
+                  </div>
+                  <div class="top-product__meta">
+                    @if (item.codigoSku) {
+                      <span>SKU {{ item.codigoSku }}</span>
+                    }
+                    <span>{{ item.unidades | number: '1.0-3' }} unidades</span>
+                    <span>{{ formatearSoles(item.importeVendido) }}</span>
+                  </div>
+                  <div class="top-product__bar" aria-label="Barra visual de unidades">
+                    <span [style.width.%]="barra"></span>
+                  </div>
+                </div>
+              </article>
+            }
+          </div>
+        } @else {
+          <p class="empty-state">Aún no hay productos vendidos para mostrar hoy.</p>
+        }
+      </section>
+
+      <section class="panel" aria-labelledby="stock-bajo-title">
+        <div class="section-heading">
+          <h3 id="stock-bajo-title">Stock bajo</h3>
+          <span>Alertas del backend</span>
+        </div>
+
+        @if (data.stockBajo.length > 0) {
+          <div class="stock-list">
+            @for (item of data.stockBajo; track item.productoId + '-' + item.productoVarianteId) {
+              <article class="stock-item">
+                <span class="stock-item__alert" aria-hidden="true"></span>
+                <div>
+                  <strong>{{ item.producto }}</strong>
+                  <span>{{ describirVariante(item) }}</span>
+                  @if (item.codigoSku) {
+                    <small>SKU {{ item.codigoSku }}</small>
+                  }
+                </div>
+                <div class="stock-item__numbers">
+                  <strong>{{ item.stockLibre | number: '1.0-3' }}</strong>
+                  <span>stock libre</span>
+                  <small>Disponible {{ item.cantidadDisponible | number: '1.0-3' }} · Reservado {{ item.cantidadReservada | number: '1.0-3' }}</small>
+                </div>
+              </article>
+            }
+          </div>
+        } @else {
+          <p class="empty-state">No hay alertas de stock bajo.</p>
+        }
+      </section>
+    </div>
+
+    <section class="quick-links" aria-labelledby="quick-links-title">
+      <div class="section-heading">
+        <h3 id="quick-links-title">Accesos rápidos</h3>
+        <span>Operación diaria</span>
+      </div>
+
+      <div class="quick-links__grid">
+        <a routerLink="/app/ventas">Nueva venta</a>
+        <a routerLink="/app/productos">Productos</a>
+        <a routerLink="/app/inventario">Inventario</a>
+        <a routerLink="/app/reportes/ventas-por-canal">Reporte por canal</a>
+      </div>
+    </section>
+  }
 </section>
