@@ -107,6 +107,8 @@ export class VentasPageComponent implements OnInit {
 
   protected readonly ventaForm = this.formBuilder.nonNullable.group({
     fecha: [this.obtenerFechaActual()],
+    sedeId: ['', Validators.required],
+    puntoVentaId: ['', Validators.required],
     canalVenta: ['TIENDA' as CanalVenta, Validators.required],
   });
 
@@ -153,7 +155,7 @@ export class VentasPageComponent implements OnInit {
   );
 
   protected readonly puedeRegistrarVenta = computed(() =>
-    this.items().length > 0 && this.estado() !== 'guardando',
+    this.items().length > 0 && this.ventaForm.controls.puntoVentaId.valid && this.estado() !== 'guardando',
   );
 
   ngOnInit(): void {
@@ -192,6 +194,11 @@ export class VentasPageComponent implements OnInit {
     this.productoForm.markAllAsTouched();
 
     if (this.productoForm.invalid) {
+      return;
+    }
+
+    if (!this.obtenerSedeIdSeleccionada()) {
+      this.mensaje.set('Indica la sede antes de agregar productos.');
       return;
     }
 
@@ -292,6 +299,15 @@ export class VentasPageComponent implements OnInit {
     }
   }
 
+  protected alCambiarSede(): void {
+    this.stockProductos.set({});
+    this.stockVariantes.set({});
+
+    if (this.productosActivos().length > 0 && this.obtenerSedeIdSeleccionada()) {
+      this.cargarStockProductos(this.productos(), false);
+    }
+  }
+
   protected actualizarBusquedaProducto(event: Event): void {
     const target = event.target;
     this.busquedaProducto.set(target instanceof HTMLInputElement ? target.value : '');
@@ -349,6 +365,11 @@ export class VentasPageComponent implements OnInit {
 
     if (this.items().length === 0) {
       this.mensaje.set('Agrega al menos un producto a la venta.');
+      return;
+    }
+
+    if (!this.obtenerPuntoVentaIdSeleccionado()) {
+      this.mensaje.set('Indica el punto de venta antes de registrar la venta.');
       return;
     }
 
@@ -475,6 +496,10 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected obtenerTextoStock(productoId: string): string {
+    if (!this.obtenerSedeIdSeleccionada()) {
+      return 'Indica sede para consultar stock.';
+    }
+
     const stock = this.obtenerStock(productoId);
 
     if (!stock || stock.estado === 'cargando') {
@@ -559,7 +584,7 @@ export class VentasPageComponent implements OnInit {
         : null,
       clienteId: normalizarTextoNullable(this.clienteForm.controls.clienteId.value),
       canalVenta: this.ventaForm.controls.canalVenta.value,
-      puntoVentaId: null,
+      puntoVentaId: this.obtenerPuntoVentaIdSeleccionado() ?? '',
       vendedorId: null,
       detalles: this.items().map((item) => ({
         productoId: item.producto.id,
@@ -611,6 +636,7 @@ export class VentasPageComponent implements OnInit {
     mostrarMensaje: boolean,
   ): void {
     const productosActivos = productos.filter((producto) => producto.activo);
+    const sedeId = this.obtenerSedeIdSeleccionada();
 
     if (productosActivos.length === 0) {
       this.stockProductos.set({});
@@ -618,6 +644,13 @@ export class VentasPageComponent implements OnInit {
       this.stockVariantes.set({});
       this.estado.set('listo');
       this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados.' : '');
+      return;
+    }
+
+    if (!sedeId) {
+      this.stockProductos.set({});
+      this.stockVariantes.set({});
+      this.cargarVariantesProductosIniciales(productosActivos, mostrarMensaje);
       return;
     }
 
@@ -652,7 +685,7 @@ export class VentasPageComponent implements OnInit {
   }
 
   private refrescarStockProductos(productoIds: readonly string[]): void {
-    if (productoIds.length === 0) {
+    if (productoIds.length === 0 || !this.obtenerSedeIdSeleccionada()) {
       return;
     }
 
@@ -690,6 +723,11 @@ export class VentasPageComponent implements OnInit {
   private cargarStockVariante(productoId: string, varianteId: string): void {
     const clave = crearClaveVariante(productoId, varianteId);
 
+    if (!this.obtenerSedeIdSeleccionada()) {
+      this.mensaje.set('Indica la sede antes de consultar stock de variante.');
+      return;
+    }
+
     this.stockVariantes.update((stockVariantes) => ({
       ...stockVariantes,
       [clave]: {
@@ -709,7 +747,7 @@ export class VentasPageComponent implements OnInit {
   private refrescarStockVariantes(
     variantes: readonly { readonly productoId: string; readonly varianteId: string }[],
   ): void {
-    if (variantes.length === 0) {
+    if (variantes.length === 0 || !this.obtenerSedeIdSeleccionada()) {
       return;
     }
 
@@ -744,7 +782,19 @@ export class VentasPageComponent implements OnInit {
   }
 
   private obtenerStockProductoEntry(productoId: string) {
-    return this.stockApi.obtenerStockProducto(productoId).pipe(
+    const sedeId = this.obtenerSedeIdSeleccionada();
+
+    if (!sedeId) {
+      return of([
+        productoId,
+        {
+          estado: 'no-disponible',
+          stock: null,
+        } satisfies StockProductoEstado,
+      ] as const);
+    }
+
+    return this.stockApi.obtenerStockProducto(productoId, sedeId).pipe(
       map((stock) => [
         productoId,
         {
@@ -764,8 +814,19 @@ export class VentasPageComponent implements OnInit {
 
   private obtenerStockVarianteEntry(productoId: string, varianteId: string) {
     const clave = crearClaveVariante(productoId, varianteId);
+    const sedeId = this.obtenerSedeIdSeleccionada();
 
-    return this.stockApi.obtenerStockProductoVariante(productoId, varianteId).pipe(
+    if (!sedeId) {
+      return of([
+        clave,
+        {
+          estado: 'no-disponible',
+          stock: null,
+        } satisfies StockProductoEstado,
+      ] as const);
+    }
+
+    return this.stockApi.obtenerStockProductoVariante(productoId, varianteId, sedeId).pipe(
       map((stock) => [
         clave,
         {
@@ -807,6 +868,32 @@ export class VentasPageComponent implements OnInit {
       ...variantes,
       [productoId]: state,
     }));
+  }
+
+  private cargarVariantesProductosIniciales(productosActivos: readonly ProductoResponse[], mostrarMensaje: boolean): void {
+    this.variantesProductos.set(Object.fromEntries(
+      productosActivos.map((producto) => [
+        producto.id,
+        {
+          estado: 'cargando',
+          variantes: [],
+        } satisfies VariantesProductoEstado,
+      ]),
+    ));
+
+    forkJoin(productosActivos.map((producto) => this.obtenerVariantesProductoEntry(producto.id))).subscribe((variantesEntries) => {
+      this.variantesProductos.set(Object.fromEntries(variantesEntries));
+      this.estado.set('listo');
+      this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados. Indica una sede para consultar stock.' : '');
+    });
+  }
+
+  private obtenerSedeIdSeleccionada(): string | null {
+    return normalizarTextoNullable(this.ventaForm.controls.sedeId.value);
+  }
+
+  private obtenerPuntoVentaIdSeleccionado(): string | null {
+    return normalizarTextoNullable(this.ventaForm.controls.puntoVentaId.value);
   }
 
   private obtenerMensajeError(error: unknown, fallback: string): string {

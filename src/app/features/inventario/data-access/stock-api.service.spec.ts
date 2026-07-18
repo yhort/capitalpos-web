@@ -27,22 +27,28 @@ describe('StockApiService', () => {
   });
 
   it('loads product stock through /api/stock', () => {
-    service.obtenerStockProducto('producto-1').subscribe((stock) => {
+    service.obtenerStockProducto('producto-1', 'sede-1').subscribe((stock) => {
       expect(stock.stockLibre).toBe(8);
     });
 
-    const request = httpTestingController.expectOne('/api/stock/productos/producto-1');
+    const request = httpTestingController.expectOne((item) =>
+      item.url === '/api/stock/productos/producto-1' &&
+      item.params.get('sedeId') === 'sede-1',
+    );
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.has('X-API-KEY')).toBe(false);
     request.flush(crearStockResponse());
   });
 
   it('loads variant stock through /api/stock', () => {
-    service.obtenerStockProductoVariante('producto-1', 'variante-1').subscribe((stock) => {
+    service.obtenerStockProductoVariante('producto-1', 'variante-1', 'sede-1').subscribe((stock) => {
       expect(stock.productoVarianteId).toBe('variante-1');
     });
 
-    const request = httpTestingController.expectOne('/api/stock/productos/producto-1/variantes/variante-1');
+    const request = httpTestingController.expectOne((item) =>
+      item.url === '/api/stock/productos/producto-1/variantes/variante-1' &&
+      item.params.get('sedeId') === 'sede-1',
+    );
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.has('X-API-KEY')).toBe(false);
     request.flush(crearStockResponse({ productoVarianteId: 'variante-1' }));
@@ -50,6 +56,7 @@ describe('StockApiService', () => {
 
   it('adjusts product stock through /api/stock/ajustar without X-API-KEY', () => {
     const ajustarRequest: AjustarStockProductoRequest = {
+      sedeId: 'sede-1',
       productoId: 'producto-1',
       productoVarianteId: null,
       cantidadDisponible: 15,
@@ -77,6 +84,7 @@ function crearStockResponse(overrides: Partial<StockProductoResponse> = {}): Sto
 function crearStockBase(): StockProductoResponse {
   return {
     empresaId: 'empresa-1',
+    sedeId: 'sede-1',
     productoId: 'producto-1',
     productoVarianteId: null,
     cantidadDisponible: 10,

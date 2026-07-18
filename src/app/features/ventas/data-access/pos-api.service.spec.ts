@@ -55,6 +55,7 @@ describe('PosApiService', () => {
     const ventaRequest: CrearVentaRequest = {
       fecha: null,
       clienteId: null,
+      puntoVentaId: 'punto-1',
       detalles: [],
     };
 

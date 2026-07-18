@@ -1,5 +1,6 @@
 export interface StockProductoResponse {
   readonly empresaId: string;
+  readonly sedeId: string;
   readonly productoId: string;
   readonly productoVarianteId: string | null;
   readonly cantidadDisponible: number;
@@ -9,6 +10,7 @@ export interface StockProductoResponse {
 }
 
 export interface AjustarStockProductoRequest {
+  readonly sedeId: string;
   readonly productoId: string;
   readonly productoVarianteId: string | null;
   readonly cantidadDisponible: number;

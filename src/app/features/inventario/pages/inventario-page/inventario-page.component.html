@@ -30,6 +30,11 @@
 
       <form class="stock-form" [formGroup]="consultaForm" (ngSubmit)="consultarStock()">
         <label class="stock-form__full">
+          <span>Sede</span>
+          <input type="text" formControlName="sedeId" (input)="alCambiarSede()" placeholder="ID de sede" />
+        </label>
+
+        <label class="stock-form__full">
           <span>Producto</span>
           <select formControlName="productoId" (change)="alCambiarProducto()">
             <option value="">Seleccionar producto</option>
@@ -68,7 +73,7 @@
 
         @if (consultaForm.invalid && consultaForm.touched) {
           <div class="form-errors" role="alert">
-            <span>El producto es obligatorio para consultar o ajustar stock.</span>
+            <span>La sede y el producto son obligatorios para consultar o ajustar stock.</span>
           </div>
         }
 
@@ -98,6 +103,10 @@
               <dd>{{ obtenerTextoProducto(producto) }}</dd>
             </div>
           }
+          <div>
+            <dt>Sede</dt>
+            <dd>{{ stockActual.sedeId }}</dd>
+          </div>
           @if (varianteSeleccionada(); as variante) {
             <div>
               <dt>Variante</dt>

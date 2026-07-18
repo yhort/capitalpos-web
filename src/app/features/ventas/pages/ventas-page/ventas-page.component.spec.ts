@@ -62,6 +62,10 @@ describe('VentasPageComponent', () => {
   async function crearComponente(): Promise<void> {
     fixture = TestBed.createComponent(VentasPageComponent);
     component = fixture.componentInstance;
+    component['ventaForm'].patchValue({
+      sedeId: 'sede-1',
+      puntoVentaId: 'punto-1',
+    });
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -107,7 +111,7 @@ describe('VentasPageComponent', () => {
       fecha: null,
       clienteId: null,
       canalVenta: 'OFERTAS',
-      puntoVentaId: null,
+      puntoVentaId: 'punto-1',
       vendedorId: null,
       detalles: [],
     };
@@ -163,7 +167,7 @@ describe('VentasPageComponent', () => {
       fecha: expect.any(String),
       clienteId: null,
       canalVenta: 'TIENDA',
-      puntoVentaId: null,
+      puntoVentaId: 'punto-1',
       vendedorId: null,
       detalles: [
         {
@@ -194,7 +198,7 @@ describe('VentasPageComponent', () => {
 
     expect(posApi.ultimaVentaRequest).toEqual(expect.objectContaining({
       canalVenta: 'PROVINCIA',
-      puntoVentaId: null,
+      puntoVentaId: 'punto-1',
       vendedorId: null,
     }));
   });
@@ -293,7 +297,43 @@ describe('VentasPageComponent', () => {
     component['alCambiarVariante']();
 
     expect(stockApi.obtenerStockProductoVarianteCalls.get('producto-2:variante-1')).toBe(1);
+    expect(stockApi.ultimaSedeId).toBe('sede-1');
     expect(component['obtenerStockLibreVariante']('producto-2', 'variante-1')).toBe(4);
+  });
+
+  it('uses sedeId when loading base product stock', async () => {
+    await crearComponente();
+
+    expect(stockApi.obtenerStockProductoSedes.get('producto-1')).toBe('sede-1');
+  });
+
+  it('does not add products when sede is missing', async () => {
+    await crearComponente();
+    component['ventaForm'].patchValue({ sedeId: '' });
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('Indica la sede antes de agregar productos.');
+  });
+
+  it('does not register a sale when puntoVentaId is missing', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+    component['ventaForm'].patchValue({ puntoVentaId: '' });
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest).toBeNull();
+    expect(component['mensaje']()).toBe('Indica el punto de venta antes de registrar la venta.');
   });
 
   it('does not add selected variants without free stock', async () => {
@@ -606,6 +646,7 @@ class PosApiServiceFake {
     return of<VentaResponse>({
       id: 'venta-1',
       empresaId: 'empresa-1',
+      sedeId: 'sede-1',
       clienteId: request.clienteId,
       fecha: request.fecha ?? '2026-07-11T00:00:00Z',
       subtotal: 20,
@@ -663,7 +704,9 @@ class ProductosApiServiceFake {
 class StockApiServiceFake {
   readonly productosConError = new Set<string>();
   readonly obtenerStockProductoCalls = new Map<string, number>();
+  readonly obtenerStockProductoSedes = new Map<string, string>();
   readonly obtenerStockProductoVarianteCalls = new Map<string, number>();
+  ultimaSedeId: string | null = null;
   readonly stocks = new Map<string, StockProductoResponse>([
     ['producto-1', crearStockResponse()],
   ]);
@@ -677,11 +720,13 @@ class StockApiServiceFake {
     })],
   ]);
 
-  obtenerStockProducto(productoId: string) {
+  obtenerStockProducto(productoId: string, sedeId: string) {
     this.obtenerStockProductoCalls.set(
       productoId,
       (this.obtenerStockProductoCalls.get(productoId) ?? 0) + 1,
     );
+    this.obtenerStockProductoSedes.set(productoId, sedeId);
+    this.ultimaSedeId = sedeId;
 
     if (this.productosConError.has(productoId)) {
       return throwError(() => new HttpErrorResponse({ status: 404 }));
@@ -690,12 +735,13 @@ class StockApiServiceFake {
     return of(this.stocks.get(productoId) ?? crearStockResponse({ productoId }));
   }
 
-  obtenerStockProductoVariante(productoId: string, productoVarianteId: string) {
+  obtenerStockProductoVariante(productoId: string, productoVarianteId: string, sedeId: string) {
     const clave = `${productoId}:${productoVarianteId}`;
     this.obtenerStockProductoVarianteCalls.set(
       clave,
       (this.obtenerStockProductoVarianteCalls.get(clave) ?? 0) + 1,
     );
+    this.ultimaSedeId = sedeId;
 
     return of(this.stocksVariantes.get(clave) ?? crearStockResponse({
       productoId,
@@ -737,6 +783,7 @@ function crearVarianteResponse(overrides: Partial<ProductoVarianteResponse> = {}
 function crearStockResponse(overrides: Partial<StockProductoResponse> = {}): StockProductoResponse {
   return {
     empresaId: 'empresa-1',
+    sedeId: 'sede-1',
     productoId: 'producto-1',
     productoVarianteId: null,
     cantidadDisponible: 5,

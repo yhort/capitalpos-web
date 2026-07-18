@@ -4,7 +4,7 @@ export interface CrearVentaRequest {
   readonly fecha: string | null;
   readonly clienteId: string | null;
   readonly canalVenta?: CanalVenta;
-  readonly puntoVentaId?: string | null;
+  readonly puntoVentaId: string;
   readonly vendedorId?: string | null;
   readonly detalles: readonly CrearVentaDetalleRequest[];
 }
@@ -28,6 +28,7 @@ export interface CrearVentaDetalleRequest {
 export interface VentaResponse {
   readonly id: string;
   readonly empresaId: string;
+  readonly sedeId?: string | null;
   readonly clienteId: string | null;
   readonly fecha: string;
   readonly subtotal: number;
@@ -35,7 +36,7 @@ export interface VentaResponse {
   readonly total: number;
   readonly estado: string;
   readonly canalVenta?: string | null;
-  readonly puntoVentaId?: string | null;
+  readonly puntoVentaId: string;
   readonly vendedorId?: string | null;
   readonly fechaCreacion: string;
   readonly detalles: readonly VentaDetalleResponse[];

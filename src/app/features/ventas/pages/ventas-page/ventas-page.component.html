@@ -205,6 +205,16 @@
         </label>
 
         <label>
+          <span>Sede</span>
+          <input type="text" formControlName="sedeId" (input)="alCambiarSede()" placeholder="ID de sede" />
+        </label>
+
+        <label>
+          <span>Punto de venta</span>
+          <input type="text" formControlName="puntoVentaId" placeholder="ID de punto de venta" />
+        </label>
+
+        <label>
           <span>Canal comercial</span>
           <select formControlName="canalVenta">
             @for (canal of canalesVenta; track canal.valor) {

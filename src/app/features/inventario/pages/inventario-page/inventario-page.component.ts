@@ -30,6 +30,7 @@ export class InventarioPageComponent implements OnInit {
   protected readonly stock = signal<StockProductoResponse | null>(null);
 
   protected readonly consultaForm = this.formBuilder.nonNullable.group({
+    sedeId: ['', Validators.required],
     productoId: ['', Validators.required],
     productoVarianteId: [''],
   });
@@ -106,6 +107,10 @@ export class InventarioPageComponent implements OnInit {
     });
   }
 
+  protected alCambiarSede(): void {
+    this.stock.set(null);
+  }
+
   protected alCambiarVariante(): void {
     this.stock.set(null);
 
@@ -123,7 +128,7 @@ export class InventarioPageComponent implements OnInit {
 
     if (this.consultaForm.invalid) {
       this.estado.set('error-validacion');
-      this.mensaje.set('Selecciona o ingresa un producto antes de consultar stock.');
+      this.mensaje.set(this.obtenerMensajeValidacionConsulta());
       return;
     }
 
@@ -136,6 +141,7 @@ export class InventarioPageComponent implements OnInit {
     }
 
     this.ejecutarConsultaStock(
+      this.consultaForm.controls.sedeId.value.trim(),
       this.consultaForm.controls.productoId.value.trim(),
       validacionVariante.productoVarianteId,
       'Stock consultado correctamente.',
@@ -152,7 +158,9 @@ export class InventarioPageComponent implements OnInit {
 
     if (this.consultaForm.invalid || this.ajusteForm.invalid) {
       this.estado.set('error-validacion');
-      this.mensaje.set('Indica producto y una cantidad disponible válida.');
+      this.mensaje.set(this.consultaForm.controls.sedeId.invalid
+        ? 'Indica la sede antes de ajustar stock.'
+        : 'Indica producto y una cantidad disponible válida.');
       return;
     }
 
@@ -170,7 +178,12 @@ export class InventarioPageComponent implements OnInit {
 
     this.stockApi.ajustarStock(request).subscribe({
       next: () => {
-        this.ejecutarConsultaStock(request.productoId, request.productoVarianteId, 'Stock ajustado correctamente.');
+        this.ejecutarConsultaStock(
+          request.sedeId,
+          request.productoId,
+          request.productoVarianteId,
+          'Stock ajustado correctamente.',
+        );
       },
       error: (error: unknown) => {
         this.estado.set(error instanceof HttpErrorResponse && error.status === 400 ? 'error-validacion' : 'error');
@@ -181,6 +194,7 @@ export class InventarioPageComponent implements OnInit {
 
   private construirAjustarStockRequest(): AjustarStockProductoRequest {
     return {
+      sedeId: this.consultaForm.controls.sedeId.value.trim(),
       productoId: this.consultaForm.controls.productoId.value.trim(),
       productoVarianteId: this.validarVarianteSeleccionada().productoVarianteId,
       cantidadDisponible: normalizarNumero(this.ajusteForm.controls.cantidadDisponible.value),
@@ -216,10 +230,15 @@ export class InventarioPageComponent implements OnInit {
     return this.validarVarianteSeleccionada().ok;
   }
 
-  private ejecutarConsultaStock(productoId: string, productoVarianteId: string | null, mensajeExito: string): void {
+  private ejecutarConsultaStock(
+    sedeId: string,
+    productoId: string,
+    productoVarianteId: string | null,
+    mensajeExito: string,
+  ): void {
     const consulta = productoVarianteId
-      ? this.stockApi.obtenerStockProductoVariante(productoId, productoVarianteId)
-      : this.stockApi.obtenerStockProducto(productoId);
+      ? this.stockApi.obtenerStockProductoVariante(productoId, productoVarianteId, sedeId)
+      : this.stockApi.obtenerStockProducto(productoId, sedeId);
 
     this.estado.set('consultando');
     this.mensaje.set('');
@@ -239,6 +258,14 @@ export class InventarioPageComponent implements OnInit {
         this.mensaje.set(this.obtenerMensajeError(error, 'No se pudo consultar el stock.'));
       },
     });
+  }
+
+  private obtenerMensajeValidacionConsulta(): string {
+    if (this.consultaForm.controls.sedeId.invalid) {
+      return 'Selecciona o ingresa una sede antes de consultar stock.';
+    }
+
+    return 'Selecciona o ingresa un producto antes de consultar stock.';
   }
 
   private validarVarianteSeleccionada():

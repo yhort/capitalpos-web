@@ -65,6 +65,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
       productoVarianteId: '',
     });
@@ -72,6 +73,7 @@ describe('InventarioPageComponent', () => {
     fixture.detectChanges();
 
     expect(stockApi.ultimoProductoId).toBe('producto-1');
+    expect(stockApi.ultimaSedeId).toBe('sede-1');
     expect(stockApi.ultimaVarianteProductoId).toBeNull();
     expect(component['stock']()?.stockLibre).toBe(8);
     expect(component['ajusteForm'].controls.cantidadDisponible.value).toBe(10);
@@ -91,6 +93,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['consultarStock']();
@@ -104,6 +107,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['consultarStock']();
@@ -117,6 +121,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -143,6 +148,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -161,6 +167,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -176,6 +183,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -190,6 +198,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -200,6 +209,7 @@ describe('InventarioPageComponent', () => {
 
     expect(stockApi.ultimaVarianteProductoId).toBe('producto-1');
     expect(stockApi.ultimaVarianteId).toBe('variante-1');
+    expect(stockApi.ultimaSedeId).toBe('sede-1');
   });
 
   it('consults variant stock automatically when a variant is selected', async () => {
@@ -207,6 +217,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -228,6 +239,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -247,6 +259,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
       productoVarianteId: '',
     });
@@ -256,6 +269,7 @@ describe('InventarioPageComponent', () => {
     component['ajustarStock']();
 
     expect(stockApi.ultimoAjusteRequest).toEqual({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
       productoVarianteId: null,
       cantidadDisponible: 15.123,
@@ -272,6 +286,7 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['alCambiarProducto']();
@@ -284,6 +299,7 @@ describe('InventarioPageComponent', () => {
     component['ajustarStock']();
 
     expect(stockApi.ultimoAjusteRequest).toEqual({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
       productoVarianteId: 'variante-1',
       cantidadDisponible: 18,
@@ -293,9 +309,38 @@ describe('InventarioPageComponent', () => {
     expect(component['mensaje']()).toBe('Stock ajustado correctamente.');
   });
 
+  it('does not consult stock when sede is missing', async () => {
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['consultarStock']();
+
+    expect(stockApi.ultimoProductoId).toBeNull();
+    expect(component['estado']()).toBe('error-validacion');
+    expect(component['mensaje']()).toBe('Selecciona o ingresa una sede antes de consultar stock.');
+  });
+
+  it('does not adjust stock when sede is missing', async () => {
+    await crearComponente();
+
+    component['consultaForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    component['ajustarStock']();
+
+    expect(stockApi.ultimoAjusteRequest).toBeNull();
+    expect(component['estado']()).toBe('error-validacion');
+    expect(component['mensaje']()).toBe('Indica la sede antes de ajustar stock.');
+  });
+
   it('shows validation state when product is missing', async () => {
     await crearComponente();
 
+    component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
+    });
     component['consultarStock']();
 
     expect(stockApi.ultimoProductoId).toBeNull();
@@ -315,6 +360,7 @@ describe('InventarioPageComponent', () => {
     );
 
     component['consultaForm'].patchValue({
+      sedeId: 'sede-1',
       productoId: 'producto-1',
     });
     component['ajustarStock']();
@@ -354,6 +400,7 @@ class ProductosApiServiceFake {
 
 class StockApiServiceFake {
   ultimoProductoId: string | null = null;
+  ultimaSedeId: string | null = null;
   ultimaVarianteProductoId: string | null = null;
   ultimaVarianteId: string | null = null;
   ultimoAjusteRequest: AjustarStockProductoRequest | null = null;
@@ -362,16 +409,18 @@ class StockApiServiceFake {
   obtenerStockProductoCalls = 0;
   obtenerStockProductoVarianteCalls = 0;
 
-  obtenerStockProducto(productoId: string) {
+  obtenerStockProducto(productoId: string, sedeId: string) {
     this.obtenerStockProductoCalls += 1;
     this.ultimoProductoId = productoId;
+    this.ultimaSedeId = sedeId;
     return of(this.stockResponse);
   }
 
-  obtenerStockProductoVariante(productoId: string, productoVarianteId: string) {
+  obtenerStockProductoVariante(productoId: string, productoVarianteId: string, sedeId: string) {
     this.obtenerStockProductoVarianteCalls += 1;
     this.ultimaVarianteProductoId = productoId;
     this.ultimaVarianteId = productoVarianteId;
+    this.ultimaSedeId = sedeId;
     return of({
       ...this.stockResponse,
       productoVarianteId,
@@ -390,6 +439,7 @@ class StockApiServiceFake {
 function crearStockResponse(overrides: Partial<StockProductoResponse> = {}): StockProductoResponse {
   return {
     empresaId: 'empresa-1',
+    sedeId: 'sede-1',
     productoId: 'producto-1',
     productoVarianteId: null,
     cantidadDisponible: 10,
