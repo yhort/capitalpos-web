@@ -4,6 +4,8 @@ import { Observable, of, throwError } from 'rxjs';
 
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
 import { ProductoResponse, ProductoVarianteResponse } from '../../../productos/models/producto.model';
+import { SedesApiService } from '../../../sedes/data-access/sedes-api.service';
+import { SedeResponse } from '../../../sedes/models/sede.model';
 import { StockApiService } from '../../data-access/stock-api.service';
 import { AjustarStockProductoRequest, StockProductoResponse } from '../../models/stock.model';
 import { formatearFechaActualizacionStock, InventarioPageComponent } from './inventario-page.component';
@@ -13,10 +15,12 @@ describe('InventarioPageComponent', () => {
   let component: InventarioPageComponent;
   let productosApi: ProductosApiServiceFake;
   let stockApi: StockApiServiceFake;
+  let sedesApi: SedesApiServiceFake;
 
   beforeEach(async () => {
     productosApi = new ProductosApiServiceFake();
     stockApi = new StockApiServiceFake();
+    sedesApi = new SedesApiServiceFake();
 
     await TestBed.configureTestingModule({
       imports: [InventarioPageComponent],
@@ -28,6 +32,10 @@ describe('InventarioPageComponent', () => {
         {
           provide: StockApiService,
           useValue: stockApi,
+        },
+        {
+          provide: SedesApiService,
+          useValue: sedesApi,
         },
       ],
     }).compileComponents();
@@ -46,6 +54,14 @@ describe('InventarioPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('1 productos activos');
     expect(component['productos']()[0]?.nombre).toBe('Polo demo');
+  });
+
+  it('loads sedes and autoselects the only active one', async () => {
+    await crearComponente();
+
+    expect(sedesApi.listarSedesCalls).toBe(1);
+    expect(component['consultaForm'].controls.sedeId.value).toBe('sede-1');
+    expect(fixture.nativeElement.textContent).toContain('Tienda Central - Cod. 0001');
   });
 
   it('shows product name and SKU instead of GUID as the main selector text', async () => {
@@ -313,26 +329,28 @@ describe('InventarioPageComponent', () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: '',
       productoId: 'producto-1',
     });
     component['consultarStock']();
 
     expect(stockApi.ultimoProductoId).toBeNull();
     expect(component['estado']()).toBe('error-validacion');
-    expect(component['mensaje']()).toBe('Selecciona o ingresa una sede antes de consultar stock.');
+    expect(component['mensaje']()).toBe('Selecciona una sede antes de consultar stock.');
   });
 
   it('does not adjust stock when sede is missing', async () => {
     await crearComponente();
 
     component['consultaForm'].patchValue({
+      sedeId: '',
       productoId: 'producto-1',
     });
     component['ajustarStock']();
 
     expect(stockApi.ultimoAjusteRequest).toBeNull();
     expect(component['estado']()).toBe('error-validacion');
-    expect(component['mensaje']()).toBe('Indica la sede antes de ajustar stock.');
+    expect(component['mensaje']()).toBe('Selecciona una sede antes de ajustar stock.');
   });
 
   it('shows validation state when product is missing', async () => {
@@ -345,7 +363,7 @@ describe('InventarioPageComponent', () => {
 
     expect(stockApi.ultimoProductoId).toBeNull();
     expect(component['estado']()).toBe('error-validacion');
-    expect(component['mensaje']()).toContain('Selecciona o ingresa un producto');
+    expect(component['mensaje']()).toContain('Selecciona un producto');
   });
 
   it('shows backend validation errors while adjusting stock', async () => {
@@ -369,6 +387,16 @@ describe('InventarioPageComponent', () => {
     expect(component['mensaje']()).toBe('La cantidad disponible no puede ser negativa.');
   });
 });
+
+class SedesApiServiceFake {
+  listarSedesCalls = 0;
+  sedes: readonly SedeResponse[] = [crearSedeResponse()];
+
+  listarSedes() {
+    this.listarSedesCalls += 1;
+    return of(this.sedes);
+  }
+}
 
 class ProductosApiServiceFake {
   ultimoListarVariantesProductoId: string | null = null;
@@ -461,6 +489,23 @@ function crearVarianteResponse(overrides: Partial<ProductoVarianteResponse> = {}
     codigoBarras: '775000000001',
     activo: true,
     fechaCreacion: '2026-07-16T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearSedeResponse(overrides: Partial<SedeResponse> = {}): SedeResponse {
+  return {
+    id: 'sede-1',
+    empresaId: 'empresa-1',
+    nombre: 'Tienda Central',
+    tipo: 'TIENDA',
+    codigoEstablecimiento: '0001',
+    direccion: 'Av. Lima 123',
+    distrito: 'Lima',
+    provincia: 'Lima',
+    departamento: 'Lima',
+    activa: true,
+    fechaCreacion: '2026-07-18T10:00:00Z',
     ...overrides,
   };
 }

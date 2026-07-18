@@ -11,6 +11,8 @@ import { StockApiService } from '../../../inventario/data-access/stock-api.servi
 import { StockProductoResponse } from '../../../inventario/models/stock.model';
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
 import { ProductoVarianteResponse } from '../../../productos/models/producto.model';
+import { SedesApiService } from '../../../sedes/data-access/sedes-api.service';
+import { PuntoVentaResponse, SedeResponse } from '../../../sedes/models/sede.model';
 import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
@@ -23,11 +25,13 @@ describe('VentasPageComponent', () => {
   let posApi: PosApiServiceFake;
   let productosApi: ProductosApiServiceFake;
   let stockApi: StockApiServiceFake;
+  let sedesApi: SedesApiServiceFake;
 
   beforeEach(async () => {
     posApi = new PosApiServiceFake();
     productosApi = new ProductosApiServiceFake();
     stockApi = new StockApiServiceFake();
+    sedesApi = new SedesApiServiceFake();
 
     await TestBed.configureTestingModule({
       imports: [VentasPageComponent],
@@ -43,6 +47,10 @@ describe('VentasPageComponent', () => {
         {
           provide: StockApiService,
           useValue: stockApi,
+        },
+        {
+          provide: SedesApiService,
+          useValue: sedesApi,
         },
         {
           provide: EmpresaActivaService,
@@ -62,10 +70,6 @@ describe('VentasPageComponent', () => {
   async function crearComponente(): Promise<void> {
     fixture = TestBed.createComponent(VentasPageComponent);
     component = fixture.componentInstance;
-    component['ventaForm'].patchValue({
-      sedeId: 'sede-1',
-      puntoVentaId: 'punto-1',
-    });
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -76,6 +80,34 @@ describe('VentasPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Polo');
     expect(fixture.nativeElement.textContent).toContain('Cliente Test');
+  });
+
+  it('loads sedes and autoselects the only active sede and point of sale', async () => {
+    await crearComponente();
+
+    expect(sedesApi.listarSedesCalls).toBe(1);
+    expect(sedesApi.listarPuntosVentaCalls.get('sede-1')).toBe(1);
+    expect(component['ventaForm'].controls.sedeId.value).toBe('sede-1');
+    expect(component['ventaForm'].controls.puntoVentaId.value).toBe('punto-1');
+    expect(fixture.nativeElement.textContent).toContain('Tienda Central - Cod. 0001');
+    expect(fixture.nativeElement.textContent).toContain('Caja Principal');
+  });
+
+  it('loads puntos de venta when sede changes', async () => {
+    sedesApi.sedes = [
+      crearSedeResponse({ id: 'sede-1', nombre: 'Tienda Central' }),
+      crearSedeResponse({ id: 'sede-2', nombre: 'Tienda Norte', codigoEstablecimiento: '0002' }),
+    ];
+    sedesApi.puntosVentaPorSede.set('sede-2', [
+      crearPuntoVentaResponse({ id: 'punto-2', sedeId: 'sede-2', nombre: 'Caja Norte' }),
+    ]);
+    await crearComponente();
+
+    component['ventaForm'].patchValue({ sedeId: 'sede-2' });
+    component['alCambiarSede']();
+
+    expect(sedesApi.listarPuntosVentaCalls.get('sede-2')).toBe(1);
+    expect(component['ventaForm'].controls.puntoVentaId.value).toBe('punto-2');
   });
 
   it('shows product stock in the POS catalog', async () => {
@@ -593,6 +625,29 @@ describe('VentasPageComponent', () => {
   });
 });
 
+class SedesApiServiceFake {
+  listarSedesCalls = 0;
+  readonly listarPuntosVentaCalls = new Map<string, number>();
+  sedes: readonly SedeResponse[] = [crearSedeResponse()];
+  readonly puntosVentaPorSede = new Map<string, readonly PuntoVentaResponse[]>([
+    ['sede-1', [crearPuntoVentaResponse()]],
+  ]);
+
+  listarSedes() {
+    this.listarSedesCalls += 1;
+    return of(this.sedes);
+  }
+
+  listarPuntosVenta(sedeId: string) {
+    this.listarPuntosVentaCalls.set(
+      sedeId,
+      (this.listarPuntosVentaCalls.get(sedeId) ?? 0) + 1,
+    );
+
+    return of(this.puntosVentaPorSede.get(sedeId) ?? []);
+  }
+}
+
 class PosApiServiceFake {
   ultimaVentaRequest: CrearVentaRequest | null = null;
   ultimaEmisionVentaId: string | null = null;
@@ -790,6 +845,34 @@ function crearStockResponse(overrides: Partial<StockProductoResponse> = {}): Sto
     cantidadReservada: 0,
     stockLibre: 5,
     fechaActualizacion: '2026-07-14T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearSedeResponse(overrides: Partial<SedeResponse> = {}): SedeResponse {
+  return {
+    id: 'sede-1',
+    empresaId: 'empresa-1',
+    nombre: 'Tienda Central',
+    tipo: 'TIENDA',
+    codigoEstablecimiento: '0001',
+    direccion: 'Av. Lima 123',
+    distrito: 'Lima',
+    provincia: 'Lima',
+    departamento: 'Lima',
+    activa: true,
+    fechaCreacion: '2026-07-18T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearPuntoVentaResponse(overrides: Partial<PuntoVentaResponse> = {}): PuntoVentaResponse {
+  return {
+    id: 'punto-1',
+    empresaId: 'empresa-1',
+    sedeId: 'sede-1',
+    nombre: 'Caja Principal',
+    activo: true,
     ...overrides,
   };
 }

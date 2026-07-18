@@ -18,6 +18,8 @@ import { StockApiService } from '../../../inventario/data-access/stock-api.servi
 import { StockProductoResponse } from '../../../inventario/models/stock.model';
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
 import { ProductoVarianteResponse } from '../../../productos/models/producto.model';
+import { SedesApiService } from '../../../sedes/data-access/sedes-api.service';
+import { PuntoVentaResponse, SedeResponse } from '../../../sedes/models/sede.model';
 import { PosApiService } from '../../data-access/pos-api.service';
 import { ClienteResponse, CrearClienteRequest } from '../../models/cliente.model';
 import { ProductoResponse } from '../../models/producto.model';
@@ -51,6 +53,8 @@ type VariantesProductoEstado =
 
 type PosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
 type EstadoEmisionVenta = 'sin-emitir' | 'emitiendo' | EmisionCpeEstado;
+type SedesEstado = 'cargando' | 'listo' | 'error';
+type PuntosVentaEstado = 'sin-sede' | 'cargando' | 'listo' | 'error';
 
 const IGV = 0.18;
 const CANALES_VENTA: readonly { readonly valor: CanalVenta; readonly etiqueta: string }[] = [
@@ -72,6 +76,7 @@ export class VentasPageComponent implements OnInit {
   private readonly posApi = inject(PosApiService);
   private readonly productosApi = inject(ProductosApiService);
   private readonly stockApi = inject(StockApiService);
+  private readonly sedesApi = inject(SedesApiService);
   private readonly empresaActivaService = inject(EmpresaActivaService);
   private readonly formBuilder = inject(FormBuilder);
 
@@ -83,6 +88,10 @@ export class VentasPageComponent implements OnInit {
   protected readonly variantesProductos = signal<Readonly<Record<string, VariantesProductoEstado>>>({});
   protected readonly stockVariantes = signal<Readonly<Record<string, StockProductoEstado>>>({});
   protected readonly clientes = signal<readonly ClienteResponse[]>([]);
+  protected readonly sedes = signal<readonly SedeResponse[]>([]);
+  protected readonly puntosVenta = signal<readonly PuntoVentaResponse[]>([]);
+  protected readonly sedesEstado = signal<SedesEstado>('cargando');
+  protected readonly puntosVentaEstado = signal<PuntosVentaEstado>('sin-sede');
   protected readonly items = signal<readonly PosItem[]>([]);
   protected readonly ultimaVenta = signal<VentaResponse | null>(null);
   protected readonly emisionEstado = signal<EstadoEmisionVenta>('sin-emitir');
@@ -142,6 +151,14 @@ export class VentasPageComponent implements OnInit {
     this.clientes().filter((cliente) => cliente.activo),
   );
 
+  protected readonly sedesActivas = computed(() =>
+    this.sedes().filter((sede) => sede.activa),
+  );
+
+  protected readonly puntosVentaActivos = computed(() =>
+    this.puntosVenta().filter((puntoVenta) => puntoVenta.activo),
+  );
+
   protected readonly subtotal = computed(() =>
     redondear(this.items().reduce((total, item) => total + this.calcularBaseItem(item), 0)),
   );
@@ -173,15 +190,21 @@ export class VentasPageComponent implements OnInit {
     forkJoin({
       productos: this.posApi.listarProductos(),
       clientes: this.posApi.listarClientes(),
+      sedes: this.sedesApi.listarSedes(),
     }).subscribe({
-      next: ({ productos, clientes }) => {
+      next: ({ productos, clientes, sedes }) => {
         this.productos.set(productos);
         this.clientes.set(clientes);
+        this.sedes.set(sedes);
+        this.sedesEstado.set('listo');
+        this.aplicarSedeInicial(sedes);
         this.cargarStockProductos(productos, mostrarMensaje);
       },
       error: (error: unknown) => {
         this.estado.set('error');
-        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar productos y clientes.'));
+        this.sedesEstado.set('error');
+        this.puntosVentaEstado.set('error');
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar sedes, productos y clientes.'));
       },
     });
   }
@@ -302,8 +325,19 @@ export class VentasPageComponent implements OnInit {
   protected alCambiarSede(): void {
     this.stockProductos.set({});
     this.stockVariantes.set({});
+    this.ventaForm.patchValue({ puntoVentaId: '' });
 
-    if (this.productosActivos().length > 0 && this.obtenerSedeIdSeleccionada()) {
+    const sedeId = this.obtenerSedeIdSeleccionada();
+
+    if (!sedeId) {
+      this.puntosVenta.set([]);
+      this.puntosVentaEstado.set('sin-sede');
+      return;
+    }
+
+    this.cargarPuntosVenta(sedeId, true);
+
+    if (this.productosActivos().length > 0) {
       this.cargarStockProductos(this.productos(), false);
     }
   }
@@ -554,6 +588,15 @@ export class VentasPageComponent implements OnInit {
 
   protected obtenerEtiquetaCanalVenta(canal: string): string {
     return this.canalesVenta.find((item) => item.valor === canal)?.etiqueta ?? canal;
+  }
+
+  protected obtenerTextoSede(sede: SedeResponse): string {
+    const codigo = sede.codigoEstablecimiento ? `Cod. ${sede.codigoEstablecimiento}` : '';
+    return [sede.nombre, codigo].filter((valor) => !!valor).join(' - ');
+  }
+
+  protected obtenerTextoPuntoVenta(puntoVenta: PuntoVentaResponse): string {
+    return puntoVenta.nombre || puntoVenta.id;
   }
 
   protected puedeAgregarProducto(productoId: string): boolean {
@@ -886,6 +929,71 @@ export class VentasPageComponent implements OnInit {
       this.estado.set('listo');
       this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados. Indica una sede para consultar stock.' : '');
     });
+  }
+
+  private aplicarSedeInicial(sedes: readonly SedeResponse[]): void {
+    const sedesActivas = sedes.filter((sede) => sede.activa);
+    const sedeActual = this.obtenerSedeIdSeleccionada();
+    const sedeActualActiva = sedesActivas.some((sede) => sede.id === sedeActual);
+
+    if (sedesActivas.length === 1 && !sedeActualActiva) {
+      this.ventaForm.patchValue({ sedeId: sedesActivas[0].id });
+      this.cargarPuntosVenta(sedesActivas[0].id, true);
+      return;
+    }
+
+    if (sedeActualActiva && sedeActual) {
+      this.cargarPuntosVenta(sedeActual, true);
+      return;
+    }
+
+    this.ventaForm.patchValue({ sedeId: '', puntoVentaId: '' });
+    this.puntosVenta.set([]);
+    this.puntosVentaEstado.set(sedesActivas.length === 0 ? 'listo' : 'sin-sede');
+  }
+
+  private cargarPuntosVenta(sedeId: string, autoSeleccionar: boolean): void {
+    this.puntosVentaEstado.set('cargando');
+    this.puntosVenta.set([]);
+
+    this.sedesApi.listarPuntosVenta(sedeId).subscribe({
+      next: (puntosVenta) => {
+        this.puntosVenta.set(puntosVenta);
+        this.puntosVentaEstado.set('listo');
+        this.aplicarPuntoVentaInicial(puntosVenta, sedeId, autoSeleccionar);
+      },
+      error: (error: unknown) => {
+        this.puntosVenta.set([]);
+        this.puntosVentaEstado.set('error');
+        this.ventaForm.patchValue({ puntoVentaId: '' });
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar los puntos de venta de la sede.'));
+      },
+    });
+  }
+
+  private aplicarPuntoVentaInicial(
+    puntosVenta: readonly PuntoVentaResponse[],
+    sedeId: string,
+    autoSeleccionar: boolean,
+  ): void {
+    const puntosActivos = puntosVenta.filter((puntoVenta) => puntoVenta.activo && puntoVenta.sedeId === sedeId);
+    const puntoActual = this.obtenerPuntoVentaIdSeleccionado();
+    const puntoActualActivo = puntosActivos.some((puntoVenta) => puntoVenta.id === puntoActual);
+
+    if (puntoActualActivo) {
+      return;
+    }
+
+    if (autoSeleccionar && puntosActivos.length === 1) {
+      this.ventaForm.patchValue({ puntoVentaId: puntosActivos[0].id });
+      return;
+    }
+
+    this.ventaForm.patchValue({ puntoVentaId: '' });
+
+    if (puntosActivos.length === 0) {
+      this.mensaje.set('No hay puntos de venta activos para la sede seleccionada.');
+    }
   }
 
   private obtenerSedeIdSeleccionada(): string | null {

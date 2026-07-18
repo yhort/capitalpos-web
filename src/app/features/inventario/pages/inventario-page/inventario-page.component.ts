@@ -2,14 +2,18 @@ import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
 import { ProductoResponse, ProductoVarianteResponse } from '../../../productos/models/producto.model';
+import { SedesApiService } from '../../../sedes/data-access/sedes-api.service';
+import { SedeResponse } from '../../../sedes/models/sede.model';
 import { StockApiService } from '../../data-access/stock-api.service';
 import { AjustarStockProductoRequest, StockProductoResponse } from '../../models/stock.model';
 
 type InventarioEstado = 'cargando' | 'listo' | 'consultando' | 'ajustando' | 'error' | 'error-validacion';
 type VariantesEstado = 'sin-producto' | 'cargando' | 'listo' | 'error';
+type SedesEstado = 'cargando' | 'listo' | 'error';
 
 @Component({
   selector: 'app-inventario-page',
@@ -20,11 +24,14 @@ type VariantesEstado = 'sin-producto' | 'cargando' | 'listo' | 'error';
 export class InventarioPageComponent implements OnInit {
   private readonly productosApi = inject(ProductosApiService);
   private readonly stockApi = inject(StockApiService);
+  private readonly sedesApi = inject(SedesApiService);
   private readonly formBuilder = inject(FormBuilder);
 
   protected readonly estado = signal<InventarioEstado>('cargando');
   protected readonly mensaje = signal('');
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
+  protected readonly sedes = signal<readonly SedeResponse[]>([]);
+  protected readonly sedesEstado = signal<SedesEstado>('cargando');
   protected readonly variantes = signal<readonly ProductoVarianteResponse[]>([]);
   protected readonly variantesEstado = signal<VariantesEstado>('sin-producto');
   protected readonly stock = signal<StockProductoResponse | null>(null);
@@ -41,6 +48,10 @@ export class InventarioPageComponent implements OnInit {
 
   protected readonly productosActivos = computed(() =>
     this.productos().filter((producto) => producto.activo),
+  );
+
+  protected readonly sedesActivas = computed(() =>
+    this.sedes().filter((sede) => sede.activa),
   );
 
   protected readonly productoSeleccionado = computed(() => {
@@ -67,16 +78,24 @@ export class InventarioPageComponent implements OnInit {
     }
 
     this.estado.set('cargando');
+    this.sedesEstado.set('cargando');
     this.mensaje.set('');
 
-    this.productosApi.listarProductos().subscribe({
-      next: (productos) => {
+    forkJoin({
+      productos: this.productosApi.listarProductos(),
+      sedes: this.sedesApi.listarSedes(),
+    }).subscribe({
+      next: ({ productos, sedes }) => {
         this.productos.set(productos);
+        this.sedes.set(sedes);
+        this.sedesEstado.set('listo');
+        this.aplicarSedeInicial(sedes);
         this.estado.set('listo');
       },
       error: (error: unknown) => {
         this.estado.set('error');
-        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar los productos.'));
+        this.sedesEstado.set('error');
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar productos y sedes.'));
       },
     });
   }
@@ -159,7 +178,7 @@ export class InventarioPageComponent implements OnInit {
     if (this.consultaForm.invalid || this.ajusteForm.invalid) {
       this.estado.set('error-validacion');
       this.mensaje.set(this.consultaForm.controls.sedeId.invalid
-        ? 'Indica la sede antes de ajustar stock.'
+        ? 'Selecciona una sede antes de ajustar stock.'
         : 'Indica producto y una cantidad disponible válida.');
       return;
     }
@@ -213,6 +232,11 @@ export class InventarioPageComponent implements OnInit {
     return [producto.nombre, producto.codigoSku].filter((valor) => !!valor).join(' - ');
   }
 
+  protected obtenerTextoSede(sede: SedeResponse): string {
+    const codigo = sede.codigoEstablecimiento ? `Cod. ${sede.codigoEstablecimiento}` : '';
+    return [sede.nombre, codigo].filter((valor) => !!valor).join(' - ');
+  }
+
   protected formatearFechaActualizacion(fecha: string | null): string {
     return formatearFechaActualizacionStock(fecha);
   }
@@ -262,10 +286,25 @@ export class InventarioPageComponent implements OnInit {
 
   private obtenerMensajeValidacionConsulta(): string {
     if (this.consultaForm.controls.sedeId.invalid) {
-      return 'Selecciona o ingresa una sede antes de consultar stock.';
+      return 'Selecciona una sede antes de consultar stock.';
     }
 
-    return 'Selecciona o ingresa un producto antes de consultar stock.';
+    return 'Selecciona un producto antes de consultar stock.';
+  }
+
+  private aplicarSedeInicial(sedes: readonly SedeResponse[]): void {
+    const sedesActivas = sedes.filter((sede) => sede.activa);
+    const sedeActual = normalizarTextoNullable(this.consultaForm.controls.sedeId.value);
+    const sedeActualActiva = sedesActivas.some((sede) => sede.id === sedeActual);
+
+    if (sedesActivas.length === 1 && !sedeActualActiva) {
+      this.consultaForm.patchValue({ sedeId: sedesActivas[0].id });
+      return;
+    }
+
+    if (!sedeActualActiva) {
+      this.consultaForm.patchValue({ sedeId: '' });
+    }
   }
 
   private validarVarianteSeleccionada():
@@ -326,7 +365,7 @@ export class InventarioPageComponent implements OnInit {
       }
 
       if (error.status === 403) {
-        return 'No tienes permisos para operar almacén.';
+        return 'No tienes permisos para consultar sedes o operar almacén.';
       }
 
       if (error.status === 404) {

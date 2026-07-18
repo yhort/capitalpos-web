@@ -31,8 +31,19 @@
       <form class="stock-form" [formGroup]="consultaForm" (ngSubmit)="consultarStock()">
         <label class="stock-form__full">
           <span>Sede</span>
-          <input type="text" formControlName="sedeId" (input)="alCambiarSede()" placeholder="ID de sede" />
+          <select formControlName="sedeId" (change)="alCambiarSede()" [disabled]="sedesEstado() === 'cargando' || estado() === 'consultando' || estado() === 'ajustando'">
+            <option value="">Seleccionar sede</option>
+            @for (sede of sedesActivas(); track sede.id) {
+              <option [value]="sede.id">{{ obtenerTextoSede(sede) }}</option>
+            }
+          </select>
         </label>
+
+        @if (sedesEstado() === 'cargando') {
+          <p class="selected-product">Cargando sedes...</p>
+        } @else if (sedesEstado() === 'listo' && sedesActivas().length === 0) {
+          <p class="selected-product">No hay sedes activas disponibles para inventario.</p>
+        }
 
         <label class="stock-form__full">
           <span>Producto</span>
@@ -73,7 +84,7 @@
 
         @if (consultaForm.invalid && consultaForm.touched) {
           <div class="form-errors" role="alert">
-            <span>La sede y el producto son obligatorios para consultar o ajustar stock.</span>
+            <span>Selecciona sede y producto para consultar o ajustar stock.</span>
           </div>
         }
 

@@ -206,12 +206,22 @@
 
         <label>
           <span>Sede</span>
-          <input type="text" formControlName="sedeId" (input)="alCambiarSede()" placeholder="ID de sede" />
+          <select formControlName="sedeId" (change)="alCambiarSede()" [disabled]="sedesEstado() === 'cargando' || estado() === 'guardando'">
+            <option value="">Seleccionar sede</option>
+            @for (sede of sedesActivas(); track sede.id) {
+              <option [value]="sede.id">{{ obtenerTextoSede(sede) }}</option>
+            }
+          </select>
         </label>
 
         <label>
           <span>Punto de venta</span>
-          <input type="text" formControlName="puntoVentaId" placeholder="ID de punto de venta" />
+          <select formControlName="puntoVentaId" [disabled]="!ventaForm.controls.sedeId.value || puntosVentaEstado() === 'cargando' || estado() === 'guardando'">
+            <option value="">Seleccionar punto</option>
+            @for (puntoVenta of puntosVentaActivos(); track puntoVenta.id) {
+              <option [value]="puntoVenta.id">{{ obtenerTextoPuntoVenta(puntoVenta) }}</option>
+            }
+          </select>
         </label>
 
         <label>
@@ -225,6 +235,15 @@
       </form>
 
       <p class="sale-channel">Canal: {{ obtenerEtiquetaCanalVenta(ventaForm.controls.canalVenta.value) }}</p>
+      @if (sedesEstado() === 'cargando') {
+        <p class="sale-channel">Cargando sedes...</p>
+      } @else if (sedesEstado() === 'listo' && sedesActivas().length === 0) {
+        <p class="sale-channel">No hay sedes activas disponibles para vender.</p>
+      } @else if (puntosVentaEstado() === 'cargando') {
+        <p class="sale-channel">Cargando puntos de venta...</p>
+      } @else if (ventaForm.controls.sedeId.value && puntosVentaEstado() === 'listo' && puntosVentaActivos().length === 0) {
+        <p class="sale-channel">No hay puntos de venta activos para la sede seleccionada.</p>
+      }
 
       @if (items().length === 0) {
         @if (productosActivos().length === 0 && estado() !== 'cargando') {
