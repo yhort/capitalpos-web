@@ -623,6 +623,79 @@ describe('VentasPageComponent', () => {
     expect(component['emisionEstado']()).toBe('exito');
     expect(component['emisionRespuesta']()?.estado).toBe('SIMULADO');
   });
+
+  it('does not show editable serie or correlativo fields for CPE emission', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+    component['registrarVenta']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[formcontrolname="serie"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[formcontrolname="correlativo"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(
+      'La serie y correlativo se asignan automáticamente según la sede seleccionada.',
+    );
+  });
+
+  it('emits CPE with compatibility serie and correlativo without user intervention', async () => {
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['emisionForm'].patchValue({
+      serie: '',
+      correlativo: 0,
+      rucEmisor: '20123456789',
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+    component['emitirComprobante']();
+
+    expect(posApi.ultimaEmisionRequest).toEqual({
+      tipoComprobante: '03',
+      serie: 'B001',
+      correlativo: 1,
+      rucEmisor: '20123456789',
+    });
+    expect(component['emisionEstado']()).toBe('exito');
+  });
+
+  it('shows backend errors when the sale sede has no active comprobante series', async () => {
+    await crearComponente();
+    posApi.emitirCpeError = new HttpErrorResponse({
+      status: 400,
+      error: {
+        ok: false,
+        mensaje: 'No existe serie activa para la sede seleccionada.',
+        data: null,
+        errores: ['Configura una serie activa para emitir el comprobante.'],
+      },
+    });
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['emisionForm'].patchValue({
+      rucEmisor: '20123456789',
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+    component['emitirComprobante']();
+
+    expect(component['emisionEstado']()).toBe('error-validacion');
+    expect(component['emisionMensaje']()).toBe('No existe serie activa para la sede seleccionada.');
+    expect(component['emisionErrores']()).toContain('Configura una serie activa para emitir el comprobante.');
+  });
 });
 
 class SedesApiServiceFake {
@@ -653,6 +726,7 @@ class PosApiServiceFake {
   ultimaEmisionVentaId: string | null = null;
   ultimaEmisionRequest: EmitirCpeDesdeVentaRequest | null = null;
   crearVentaError: HttpErrorResponse | null = null;
+  emitirCpeError: HttpErrorResponse | null = null;
   productos: readonly ProductoResponse[] = [
     {
       id: 'producto-1',
@@ -719,6 +793,10 @@ class PosApiServiceFake {
   emitirCpeDesdeVenta(ventaId: string, request: EmitirCpeDesdeVentaRequest) {
     this.ultimaEmisionVentaId = ventaId;
     this.ultimaEmisionRequest = request;
+
+    if (this.emitirCpeError) {
+      return throwError(() => this.emitirCpeError);
+    }
 
     return of<ApiResponse<CpeEmisionResponse>>({
       ok: true,

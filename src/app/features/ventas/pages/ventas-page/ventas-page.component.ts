@@ -57,6 +57,8 @@ type SedesEstado = 'cargando' | 'listo' | 'error';
 type PuntosVentaEstado = 'sin-sede' | 'cargando' | 'listo' | 'error';
 
 const IGV = 0.18;
+const SERIE_COMPATIBILIDAD_CPE = 'B001';
+const CORRELATIVO_COMPATIBILIDAD_CPE = 1;
 const CANALES_VENTA: readonly { readonly valor: CanalVenta; readonly etiqueta: string }[] = [
   { valor: 'TIENDA', etiqueta: 'Tienda' },
   { valor: 'PROVINCIA', etiqueta: 'Provincia' },
@@ -123,8 +125,8 @@ export class VentasPageComponent implements OnInit {
 
   protected readonly emisionForm = this.formBuilder.nonNullable.group({
     tipoComprobante: ['03', [Validators.required, Validators.maxLength(2)]],
-    serie: ['B001', [Validators.required, Validators.maxLength(4)]],
-    correlativo: [1, [Validators.required, Validators.min(1)]],
+    serie: [SERIE_COMPATIBILIDAD_CPE],
+    correlativo: [CORRELATIVO_COMPATIBILIDAD_CPE],
     rucEmisor: ['', [Validators.required, Validators.pattern(/^\d{11}$/)]],
   });
 
@@ -465,7 +467,7 @@ export class VentasPageComponent implements OnInit {
 
     if (this.emisionForm.invalid) {
       this.emisionEstado.set('error-validacion');
-      this.emisionMensaje.set('Completa tipo, serie, correlativo y RUC emisor.');
+      this.emisionMensaje.set('Completa tipo de comprobante y RUC emisor.');
       return;
     }
 
@@ -645,8 +647,8 @@ export class VentasPageComponent implements OnInit {
 
     return {
       tipoComprobante: form.tipoComprobante,
-      serie: form.serie.trim().toUpperCase(),
-      correlativo: form.correlativo,
+      serie: normalizarSerieCompatibilidad(form.serie),
+      correlativo: normalizarCorrelativoCompatibilidad(form.correlativo),
       rucEmisor: form.rucEmisor.trim(),
     };
   }
@@ -1084,4 +1086,13 @@ function crearClaveVariante(productoId: string, varianteId: string): string {
 function normalizarTextoNullable(valor: string): string | null {
   const texto = valor.trim();
   return texto.length > 0 ? texto : null;
+}
+
+function normalizarSerieCompatibilidad(valor: string): string {
+  const serie = valor.trim().toUpperCase();
+  return serie.length > 0 ? serie : SERIE_COMPATIBILIDAD_CPE;
+}
+
+function normalizarCorrelativoCompatibilidad(valor: number): number {
+  return Number.isFinite(valor) && valor >= 1 ? valor : CORRELATIVO_COMPATIBILIDAD_CPE;
 }
