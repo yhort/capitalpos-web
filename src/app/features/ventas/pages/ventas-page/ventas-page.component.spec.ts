@@ -5,6 +5,8 @@ import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
+import { CajaApiService } from '../../../caja/data-access/caja-api.service';
+import { AbrirSesionCajaRequest, CerrarSesionCajaRequest, SesionCajaResponse } from '../../../caja/models/caja.model';
 import { ApiResponse } from '../../../cpe/models/api-response.model';
 import { CpeEmisionResponse } from '../../../cpe/models/cpe-emision-response.model';
 import { StockApiService } from '../../../inventario/data-access/stock-api.service';
@@ -26,12 +28,14 @@ describe('VentasPageComponent', () => {
   let productosApi: ProductosApiServiceFake;
   let stockApi: StockApiServiceFake;
   let sedesApi: SedesApiServiceFake;
+  let cajaApi: CajaApiServiceFake;
 
   beforeEach(async () => {
     posApi = new PosApiServiceFake();
     productosApi = new ProductosApiServiceFake();
     stockApi = new StockApiServiceFake();
     sedesApi = new SedesApiServiceFake();
+    cajaApi = new CajaApiServiceFake();
 
     await TestBed.configureTestingModule({
       imports: [VentasPageComponent],
@@ -51,6 +55,10 @@ describe('VentasPageComponent', () => {
         {
           provide: SedesApiService,
           useValue: sedesApi,
+        },
+        {
+          provide: CajaApiService,
+          useValue: cajaApi,
         },
         {
           provide: EmpresaActivaService,
@@ -93,6 +101,130 @@ describe('VentasPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Caja Principal');
   });
 
+  it('queries the open cash session for the selected point of sale', async () => {
+    cajaApi.sesionesAbiertas.set('punto-1', crearSesionCajaResponse());
+
+    await crearComponente();
+
+    expect(cajaApi.obtenerSesionAbiertaCalls.get('punto-1')).toBe(1);
+    expect(component['cajaEstado']()).toBe('abierta');
+    expect(fixture.nativeElement.textContent).toContain('Caja');
+    expect(fixture.nativeElement.textContent).toContain('Monto inicial');
+    expect(fixture.nativeElement.textContent).toContain('100.00');
+  });
+
+  it('shows sin caja abierta when the cash session endpoint returns 404', async () => {
+    await crearComponente();
+
+    expect(cajaApi.obtenerSesionAbiertaCalls.get('punto-1')).toBe(1);
+    expect(component['cajaEstado']()).toBe('sin-abierta');
+    expect(fixture.nativeElement.textContent).toContain('Sin caja abierta para este punto de venta.');
+    expect(fixture.nativeElement.textContent).toContain('Abrir caja');
+  });
+
+  it('opens cash session with initial amount', async () => {
+    await crearComponente();
+
+    component['abrirCajaForm'].patchValue({
+      montoInicial: 150,
+      observacionApertura: 'Apertura turno mañana',
+    });
+    component['abrirCaja']();
+    fixture.detectChanges();
+
+    expect(cajaApi.ultimaAbrirSesionRequest).toEqual({
+      puntoVentaId: 'punto-1',
+      montoInicial: 150,
+      observacionApertura: 'Apertura turno mañana',
+    });
+    expect(component['cajaEstado']()).toBe('abierta');
+    expect(component['sesionCaja']()?.montoInicial).toBe(150);
+    expect(fixture.nativeElement.textContent).toContain('Caja abierta correctamente.');
+  });
+
+  it('validates negative initial amount before opening cash session', async () => {
+    await crearComponente();
+
+    component['abrirCajaForm'].patchValue({
+      montoInicial: -1,
+    });
+    component['abrirCaja']();
+
+    expect(cajaApi.ultimaAbrirSesionRequest).toBeNull();
+    expect(component['cajaMensaje']()).toBe('Indica un monto inicial válido para abrir caja.');
+  });
+
+  it('closes cash session with declared amount and shows closing difference', async () => {
+    cajaApi.sesionesAbiertas.set('punto-1', crearSesionCajaResponse());
+    cajaApi.cerrarSesionResponse = crearSesionCajaResponse({
+      estado: 'Cerrada',
+      montoDeclaradoCierre: 135,
+      diferenciaCierre: 35,
+      fechaCierre: '2026-07-21T18:00:00-05:00',
+      observacionCierre: 'Cierre ok',
+    });
+    await crearComponente();
+
+    component['cerrarCajaForm'].patchValue({
+      montoDeclaradoCierre: 135,
+      observacionCierre: 'Cierre ok',
+    });
+    component['cerrarCaja']();
+    fixture.detectChanges();
+
+    expect(cajaApi.ultimaCerrarSesion).toEqual({
+      sesionCajaId: 'sesion-1',
+      request: {
+        montoDeclaradoCierre: 135,
+        observacionCierre: 'Cierre ok',
+      },
+    });
+    expect(component['cajaEstado']()).toBe('sin-abierta');
+    expect(component['sesionCaja']()?.diferenciaCierre).toBe(35);
+    expect(fixture.nativeElement.textContent).toContain('Diferencia de cierre');
+    expect(fixture.nativeElement.textContent).toContain('35.00');
+  });
+
+  it('validates negative declared amount before closing cash session', async () => {
+    cajaApi.sesionesAbiertas.set('punto-1', crearSesionCajaResponse());
+    await crearComponente();
+
+    component['cerrarCajaForm'].patchValue({
+      montoDeclaradoCierre: -1,
+    });
+    component['cerrarCaja']();
+
+    expect(cajaApi.ultimaCerrarSesion).toBeNull();
+    expect(component['cajaMensaje']()).toBe('Indica un monto declarado válido para cerrar caja.');
+  });
+
+  it('shows backend errors while opening or closing cash session', async () => {
+    await crearComponente();
+    cajaApi.abrirSesionError = new HttpErrorResponse({
+      status: 400,
+      error: { mensaje: 'Ya existe una caja abierta para el punto de venta.' },
+    });
+
+    component['abrirCajaForm'].patchValue({ montoInicial: 20 });
+    component['abrirCaja']();
+
+    expect(component['cajaMensaje']()).toBe('Ya existe una caja abierta para el punto de venta.');
+
+    cajaApi.abrirSesionError = null;
+    cajaApi.sesionesAbiertas.set('punto-1', crearSesionCajaResponse());
+    component['consultarSesionCajaAbierta']();
+    cajaApi.cerrarSesionError = new HttpErrorResponse({
+      status: 400,
+      error: { mensaje: 'El monto declarado no coincide con el cierre esperado.' },
+    });
+
+    component['cerrarCajaForm'].patchValue({ montoDeclaradoCierre: 10 });
+    component['cerrarCaja']();
+
+    expect(component['cajaMensaje']()).toBe('El monto declarado no coincide con el cierre esperado.');
+    expect(component['cajaEstado']()).toBe('abierta');
+  });
+
   it('loads puntos de venta when sede changes', async () => {
     sedesApi.sedes = [
       crearSedeResponse({ id: 'sede-1', nombre: 'Tienda Central' }),
@@ -108,6 +240,26 @@ describe('VentasPageComponent', () => {
 
     expect(sedesApi.listarPuntosVentaCalls.get('sede-2')).toBe(1);
     expect(component['ventaForm'].controls.puntoVentaId.value).toBe('punto-2');
+    expect(cajaApi.obtenerSesionAbiertaCalls.get('punto-2')).toBe(1);
+  });
+
+  it('refreshes cash session when point of sale changes', async () => {
+    sedesApi.puntosVentaPorSede.set('sede-1', [
+      crearPuntoVentaResponse({ id: 'punto-1', sedeId: 'sede-1', nombre: 'Caja Principal' }),
+      crearPuntoVentaResponse({ id: 'punto-2', sedeId: 'sede-1', nombre: 'Caja Auxiliar' }),
+    ]);
+    cajaApi.sesionesAbiertas.set('punto-2', crearSesionCajaResponse({
+      id: 'sesion-2',
+      puntoVentaId: 'punto-2',
+      montoInicial: 80,
+    }));
+    await crearComponente();
+
+    component['ventaForm'].patchValue({ puntoVentaId: 'punto-2' });
+    component['alCambiarPuntoVenta']();
+
+    expect(cajaApi.obtenerSesionAbiertaCalls.get('punto-2')).toBe(1);
+    expect(component['sesionCaja']()?.id).toBe('sesion-2');
   });
 
   it('shows product stock in the POS catalog', async () => {
@@ -900,6 +1052,71 @@ class SedesApiServiceFake {
   }
 }
 
+class CajaApiServiceFake {
+  readonly obtenerSesionAbiertaCalls = new Map<string, number>();
+  readonly sesionesAbiertas = new Map<string, SesionCajaResponse>();
+  ultimaAbrirSesionRequest: AbrirSesionCajaRequest | null = null;
+  ultimaCerrarSesion: {
+    readonly sesionCajaId: string;
+    readonly request: CerrarSesionCajaRequest;
+  } | null = null;
+  abrirSesionError: HttpErrorResponse | null = null;
+  cerrarSesionError: HttpErrorResponse | null = null;
+  cerrarSesionResponse: SesionCajaResponse | null = null;
+
+  obtenerSesionAbierta(puntoVentaId: string) {
+    this.obtenerSesionAbiertaCalls.set(
+      puntoVentaId,
+      (this.obtenerSesionAbiertaCalls.get(puntoVentaId) ?? 0) + 1,
+    );
+
+    const sesion = this.sesionesAbiertas.get(puntoVentaId);
+
+    if (!sesion) {
+      return throwError(() => new HttpErrorResponse({ status: 404 }));
+    }
+
+    return of(sesion);
+  }
+
+  abrirSesion(request: AbrirSesionCajaRequest) {
+    this.ultimaAbrirSesionRequest = request;
+
+    if (this.abrirSesionError) {
+      return throwError(() => this.abrirSesionError);
+    }
+
+    const sesion = crearSesionCajaResponse({
+      puntoVentaId: request.puntoVentaId,
+      montoInicial: request.montoInicial,
+      observacionApertura: request.observacionApertura ?? null,
+    });
+    this.sesionesAbiertas.set(request.puntoVentaId, sesion);
+
+    return of(sesion);
+  }
+
+  cerrarSesion(sesionCajaId: string, request: CerrarSesionCajaRequest) {
+    this.ultimaCerrarSesion = {
+      sesionCajaId,
+      request,
+    };
+
+    if (this.cerrarSesionError) {
+      return throwError(() => this.cerrarSesionError);
+    }
+
+    return of(this.cerrarSesionResponse ?? crearSesionCajaResponse({
+      id: sesionCajaId,
+      estado: 'Cerrada',
+      montoDeclaradoCierre: request.montoDeclaradoCierre,
+      diferenciaCierre: 0,
+      fechaCierre: '2026-07-21T18:00:00-05:00',
+      observacionCierre: request.observacionCierre ?? null,
+    }));
+  }
+}
+
 class PosApiServiceFake {
   ultimaVentaRequest: CrearVentaRequest | null = null;
   ultimaEmisionVentaId: string | null = null;
@@ -1164,6 +1381,24 @@ function crearPuntoVentaResponse(overrides: Partial<PuntoVentaResponse> = {}): P
     sedeId: 'sede-1',
     nombre: 'Caja Principal',
     activo: true,
+    ...overrides,
+  };
+}
+
+function crearSesionCajaResponse(overrides: Partial<SesionCajaResponse> = {}): SesionCajaResponse {
+  return {
+    id: 'sesion-1',
+    empresaId: 'empresa-1',
+    sedeId: 'sede-1',
+    puntoVentaId: 'punto-1',
+    estado: 'Abierta',
+    montoInicial: 100,
+    montoDeclaradoCierre: null,
+    diferenciaCierre: null,
+    fechaApertura: '2026-07-21T09:00:00-05:00',
+    fechaCierre: null,
+    observacionApertura: 'Inicio de turno',
+    observacionCierre: null,
     ...overrides,
   };
 }

@@ -239,7 +239,7 @@
 
         <label>
           <span>Punto de venta</span>
-          <select formControlName="puntoVentaId" [disabled]="!ventaForm.controls.sedeId.value || puntosVentaEstado() === 'cargando' || estado() === 'guardando'">
+          <select formControlName="puntoVentaId" (change)="alCambiarPuntoVenta()" [disabled]="!ventaForm.controls.sedeId.value || puntosVentaEstado() === 'cargando' || estado() === 'guardando'">
             <option value="">Seleccionar punto</option>
             @for (puntoVenta of puntosVentaActivos(); track puntoVenta.id) {
               <option [value]="puntoVenta.id">{{ obtenerTextoPuntoVenta(puntoVenta) }}</option>
@@ -267,6 +267,98 @@
       } @else if (ventaForm.controls.sedeId.value && puntosVentaEstado() === 'listo' && puntosVentaActivos().length === 0) {
         <p class="sale-channel">No hay puntos de venta activos para la sede seleccionada.</p>
       }
+
+      <section class="cpe-emission" aria-labelledby="caja-title">
+        <div class="pos-panel__header">
+          <h3 id="caja-title">Caja</h3>
+          <span>
+            @if (cajaEstado() === 'abierta' || cajaEstado() === 'cerrando') {
+              Abierta
+            } @else if (cajaEstado() === 'cargando') {
+              Consultando
+            } @else {
+              Sin caja abierta
+            }
+          </span>
+        </div>
+
+        @if (cajaMensaje()) {
+          <p class="emission-status" [class.emission-status--success]="cajaEstado() === 'abierta'" [class.emission-status--error]="cajaEstado() === 'error'">
+            {{ cajaMensaje() }}
+          </p>
+        }
+
+        @if (cajaEstado() === 'sin-punto') {
+          <p class="empty-state">Selecciona un punto de venta para consultar caja.</p>
+        } @else if (cajaEstado() === 'cargando') {
+          <p class="empty-state">Consultando caja abierta...</p>
+        } @else if (cajaEstado() === 'abierta' || cajaEstado() === 'cerrando') {
+          @if (sesionCaja(); as sesion) {
+            <dl class="emission-details">
+              <div>
+                <dt>Fecha apertura</dt>
+                <dd>{{ formatearFechaCaja(sesion.fechaApertura) }}</dd>
+              </div>
+              <div>
+                <dt>Monto inicial</dt>
+                <dd>S/ {{ sesion.montoInicial | number: '1.2-2' }}</dd>
+              </div>
+              <div>
+                <dt>Observación</dt>
+                <dd>{{ sesion.observacionApertura || 'Sin observación' }}</dd>
+              </div>
+            </dl>
+
+            <form class="emission-form" [formGroup]="cerrarCajaForm" (ngSubmit)="cerrarCaja()">
+              <label>
+                <span>Monto declarado</span>
+                <input type="number" min="0" step="0.01" formControlName="montoDeclaradoCierre" />
+              </label>
+
+              <label class="emission-form__wide">
+                <span>Observación cierre</span>
+                <input type="text" formControlName="observacionCierre" />
+              </label>
+
+              <button type="submit" class="ghost-button emission-form__wide" [disabled]="cajaEstado() === 'cerrando'">
+                {{ cajaEstado() === 'cerrando' ? 'Cerrando caja...' : 'Cerrar caja' }}
+              </button>
+            </form>
+          }
+        } @else {
+          @if (sesionCaja(); as sesionCerrada) {
+            @if (sesionCerrada.diferenciaCierre !== null) {
+              <p class="sale-channel">
+                Diferencia de cierre: S/ {{ sesionCerrada.diferenciaCierre | number: '1.2-2' }}
+              </p>
+            }
+          }
+
+          <form class="emission-form" [formGroup]="abrirCajaForm" (ngSubmit)="abrirCaja()">
+            <label>
+              <span>Monto inicial</span>
+              <input type="number" min="0" step="0.01" formControlName="montoInicial" />
+            </label>
+
+            <label class="emission-form__wide">
+              <span>Observación apertura</span>
+              <input type="text" formControlName="observacionApertura" />
+            </label>
+
+            @if (abrirCajaForm.invalid && abrirCajaForm.touched) {
+              <p class="form-errors emission-form__wide" role="alert">El monto inicial no puede ser negativo.</p>
+            }
+
+            <button type="submit" class="primary-button emission-form__wide" [disabled]="cajaEstado() === 'abriendo' || !ventaForm.controls.puntoVentaId.value">
+              {{ cajaEstado() === 'abriendo' ? 'Abriendo caja...' : 'Abrir caja' }}
+            </button>
+          </form>
+        }
+
+        @if (cerrarCajaForm.invalid && cerrarCajaForm.touched) {
+          <p class="form-errors" role="alert">El monto declarado de cierre no puede ser negativo.</p>
+        }
+      </section>
 
       @if (items().length === 0) {
         @if (productosActivos().length === 0 && estado() !== 'cargando') {

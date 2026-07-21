@@ -6,6 +6,8 @@ import { RouterLink } from '@angular/router';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
 import { EmpresaActivaService } from '../../../../core/empresa/empresa-activa.service';
+import { CajaApiService } from '../../../caja/data-access/caja-api.service';
+import { SesionCajaResponse } from '../../../caja/models/caja.model';
 import { ApiResponse } from '../../../cpe/models/api-response.model';
 import { CpeEmisionResponse } from '../../../cpe/models/cpe-emision-response.model';
 import {
@@ -66,6 +68,7 @@ type PosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
 type EstadoEmisionVenta = 'sin-emitir' | 'emitiendo' | EmisionCpeEstado;
 type SedesEstado = 'cargando' | 'listo' | 'error';
 type PuntosVentaEstado = 'sin-sede' | 'cargando' | 'listo' | 'error';
+type CajaEstado = 'sin-punto' | 'cargando' | 'sin-abierta' | 'abierta' | 'abriendo' | 'cerrando' | 'error';
 
 const IGV = 0.18;
 const SERIE_COMPATIBILIDAD_CPE = 'B001';
@@ -89,6 +92,7 @@ export class VentasPageComponent implements OnInit {
   private readonly posApi = inject(PosApiService);
   private readonly productosApi = inject(ProductosApiService);
   private readonly stockApi = inject(StockApiService);
+  private readonly cajaApi = inject(CajaApiService);
   private readonly sedesApi = inject(SedesApiService);
   private readonly empresaActivaService = inject(EmpresaActivaService);
   private readonly formBuilder = inject(FormBuilder);
@@ -106,6 +110,9 @@ export class VentasPageComponent implements OnInit {
   protected readonly puntosVenta = signal<readonly PuntoVentaResponse[]>([]);
   protected readonly sedesEstado = signal<SedesEstado>('cargando');
   protected readonly puntosVentaEstado = signal<PuntosVentaEstado>('sin-sede');
+  protected readonly cajaEstado = signal<CajaEstado>('sin-punto');
+  protected readonly cajaMensaje = signal('');
+  protected readonly sesionCaja = signal<SesionCajaResponse | null>(null);
   protected readonly items = signal<readonly PosItem[]>([]);
   protected readonly ultimaVenta = signal<VentaResponse | null>(null);
   protected readonly emisionEstado = signal<EstadoEmisionVenta>('sin-emitir');
@@ -141,6 +148,16 @@ export class VentasPageComponent implements OnInit {
     serie: [SERIE_COMPATIBILIDAD_CPE],
     correlativo: [CORRELATIVO_COMPATIBILIDAD_CPE],
     rucEmisor: ['', [Validators.required, Validators.pattern(/^\d{11}$/)]],
+  });
+
+  protected readonly abrirCajaForm = this.formBuilder.nonNullable.group({
+    montoInicial: [0, [Validators.required, Validators.min(0)]],
+    observacionApertura: [''],
+  });
+
+  protected readonly cerrarCajaForm = this.formBuilder.nonNullable.group({
+    montoDeclaradoCierre: [0, [Validators.required, Validators.min(0)]],
+    observacionCierre: [''],
   });
 
   protected readonly productosActivos = computed(() =>
@@ -388,6 +405,7 @@ export class VentasPageComponent implements OnInit {
     this.stockProductos.set({});
     this.stockVariantes.set({});
     this.ventaForm.patchValue({ puntoVentaId: '' });
+    this.limpiarEstadoCaja();
 
     const sedeId = this.obtenerSedeIdSeleccionada();
 
@@ -402,6 +420,11 @@ export class VentasPageComponent implements OnInit {
     if (this.productosActivos().length > 0) {
       this.cargarStockProductos(this.productos(), false);
     }
+  }
+
+  protected alCambiarPuntoVenta(): void {
+    this.limpiarEstadoCaja();
+    this.consultarSesionCajaAbierta();
   }
 
   protected actualizarBusquedaProducto(event: Event): void {
@@ -546,6 +569,88 @@ export class VentasPageComponent implements OnInit {
         this.emisionEstado.set(resultado.estado);
         this.emisionMensaje.set(resultado.mensaje);
         this.emisionErrores.set(resultado.errores);
+      },
+    });
+  }
+
+  protected abrirCaja(): void {
+    const puntoVentaId = this.obtenerPuntoVentaIdSeleccionado();
+
+    this.abrirCajaForm.markAllAsTouched();
+
+    if (!puntoVentaId) {
+      this.cajaEstado.set('sin-punto');
+      this.cajaMensaje.set('Selecciona un punto de venta para operar caja.');
+      return;
+    }
+
+    if (this.abrirCajaForm.invalid) {
+      this.cajaMensaje.set('Indica un monto inicial válido para abrir caja.');
+      return;
+    }
+
+    const form = this.abrirCajaForm.getRawValue();
+    this.cajaEstado.set('abriendo');
+    this.cajaMensaje.set('');
+
+    this.cajaApi.abrirSesion({
+      puntoVentaId,
+      montoInicial: normalizarNumero(form.montoInicial),
+      observacionApertura: normalizarTextoNullable(form.observacionApertura),
+    }).subscribe({
+      next: (sesion) => {
+        this.sesionCaja.set(sesion);
+        this.cajaEstado.set('abierta');
+        this.cajaMensaje.set('Caja abierta correctamente.');
+        this.abrirCajaForm.reset({
+          montoInicial: 0,
+          observacionApertura: '',
+        });
+      },
+      error: (error: unknown) => {
+        this.sesionCaja.set(null);
+        this.cajaEstado.set('sin-abierta');
+        this.cajaMensaje.set(this.obtenerMensajeError(error, 'No se pudo abrir la caja.'));
+      },
+    });
+  }
+
+  protected cerrarCaja(): void {
+    const sesion = this.sesionCaja();
+
+    this.cerrarCajaForm.markAllAsTouched();
+
+    if (!sesion) {
+      this.cajaEstado.set('sin-abierta');
+      this.cajaMensaje.set('No hay caja abierta para cerrar.');
+      return;
+    }
+
+    if (this.cerrarCajaForm.invalid) {
+      this.cajaMensaje.set('Indica un monto declarado válido para cerrar caja.');
+      return;
+    }
+
+    const form = this.cerrarCajaForm.getRawValue();
+    this.cajaEstado.set('cerrando');
+    this.cajaMensaje.set('');
+
+    this.cajaApi.cerrarSesion(sesion.id, {
+      montoDeclaradoCierre: normalizarNumero(form.montoDeclaradoCierre),
+      observacionCierre: normalizarTextoNullable(form.observacionCierre),
+    }).subscribe({
+      next: (sesionCerrada) => {
+        this.sesionCaja.set(sesionCerrada);
+        this.cajaEstado.set('sin-abierta');
+        this.cajaMensaje.set('Caja cerrada correctamente.');
+        this.cerrarCajaForm.reset({
+          montoDeclaradoCierre: 0,
+          observacionCierre: '',
+        });
+      },
+      error: (error: unknown) => {
+        this.cajaEstado.set('abierta');
+        this.cajaMensaje.set(this.obtenerMensajeError(error, 'No se pudo cerrar la caja.'));
       },
     });
   }
@@ -714,6 +819,24 @@ export class VentasPageComponent implements OnInit {
 
   protected obtenerTextoPuntoVenta(puntoVenta: PuntoVentaResponse): string {
     return puntoVenta.nombre || puntoVenta.id;
+  }
+
+  protected formatearFechaCaja(fecha: string | null): string {
+    if (!fecha) {
+      return 'Sin fecha';
+    }
+
+    const date = new Date(fecha);
+
+    if (Number.isNaN(date.getTime())) {
+      return 'Sin fecha';
+    }
+
+    return new Intl.DateTimeFormat('es-PE', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/Lima',
+    }).format(date);
   }
 
   protected puedeAgregarProducto(productoId: string): boolean {
@@ -1181,15 +1304,18 @@ export class VentasPageComponent implements OnInit {
     const puntoActualActivo = puntosActivos.some((puntoVenta) => puntoVenta.id === puntoActual);
 
     if (puntoActualActivo) {
+      this.consultarSesionCajaAbierta();
       return;
     }
 
     if (autoSeleccionar && puntosActivos.length === 1) {
       this.ventaForm.patchValue({ puntoVentaId: puntosActivos[0].id });
+      this.consultarSesionCajaAbierta();
       return;
     }
 
     this.ventaForm.patchValue({ puntoVentaId: '' });
+    this.limpiarEstadoCaja();
 
     if (puntosActivos.length === 0) {
       this.mensaje.set('No hay puntos de venta activos para la sede seleccionada.');
@@ -1202,6 +1328,53 @@ export class VentasPageComponent implements OnInit {
 
   private obtenerPuntoVentaIdSeleccionado(): string | null {
     return normalizarTextoNullable(this.ventaForm.controls.puntoVentaId.value);
+  }
+
+  private consultarSesionCajaAbierta(): void {
+    const puntoVentaId = this.obtenerPuntoVentaIdSeleccionado();
+
+    if (!puntoVentaId) {
+      this.limpiarEstadoCaja();
+      return;
+    }
+
+    this.cajaEstado.set('cargando');
+    this.cajaMensaje.set('');
+    this.sesionCaja.set(null);
+
+    this.cajaApi.obtenerSesionAbierta(puntoVentaId).subscribe({
+      next: (sesion) => {
+        this.sesionCaja.set(sesion);
+        this.cajaEstado.set('abierta');
+        this.cajaMensaje.set('');
+      },
+      error: (error: unknown) => {
+        if (error instanceof HttpErrorResponse && error.status === 404) {
+          this.sesionCaja.set(null);
+          this.cajaEstado.set('sin-abierta');
+          this.cajaMensaje.set('Sin caja abierta para este punto de venta.');
+          return;
+        }
+
+        this.sesionCaja.set(null);
+        this.cajaEstado.set('error');
+        this.cajaMensaje.set(this.obtenerMensajeError(error, 'No se pudo consultar la caja abierta.'));
+      },
+    });
+  }
+
+  private limpiarEstadoCaja(): void {
+    this.cajaEstado.set('sin-punto');
+    this.cajaMensaje.set('');
+    this.sesionCaja.set(null);
+    this.abrirCajaForm.reset({
+      montoInicial: 0,
+      observacionApertura: '',
+    });
+    this.cerrarCajaForm.reset({
+      montoDeclaradoCierre: 0,
+      observacionCierre: '',
+    });
   }
 
   private obtenerMensajeError(error: unknown, fallback: string): string {
@@ -1284,6 +1457,10 @@ function crearClaveVariante(productoId: string, varianteId: string): string {
 function normalizarTextoNullable(valor: string): string | null {
   const texto = valor.trim();
   return texto.length > 0 ? texto : null;
+}
+
+function normalizarNumero(valor: number): number {
+  return Math.round((Number(valor) + Number.EPSILON) * 100) / 100;
 }
 
 function normalizarSerieCompatibilidad(valor: string): string {
