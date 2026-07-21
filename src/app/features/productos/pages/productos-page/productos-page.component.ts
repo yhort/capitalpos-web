@@ -119,7 +119,7 @@ export class ProductosPageComponent implements OnInit {
   );
 
   protected readonly unidadesMedidaActivas = computed(() =>
-    this.unidadesMedida().filter((unidad) => unidad.activo),
+    this.unidadesMedida().filter((unidad) => this.esUnidadMedidaActiva(unidad)),
   );
 
   ngOnInit(): void {
@@ -452,6 +452,10 @@ export class ProductosPageComponent implements OnInit {
     return `${abreviatura} - ${unidad.nombre}`;
   }
 
+  protected hayErrorUnidadesMedida(): boolean {
+    return this.catalogoEstado() === 'error' && this.unidadesMedida().length === 0;
+  }
+
   protected obtenerNombreCategoria(categoriaId: string | null | undefined): string {
     if (!categoriaId) {
       return 'Sin categoría';
@@ -594,6 +598,10 @@ export class ProductosPageComponent implements OnInit {
     }
 
     return fallback;
+  }
+
+  private esUnidadMedidaActiva(unidad: UnidadMedidaResponse): boolean {
+    return unidad.activo ?? unidad.activa ?? false;
   }
 
   private extraerMensajeApi(error: HttpErrorResponse): string {

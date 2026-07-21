@@ -320,7 +320,9 @@
                   </button>
                 </form>
 
-                @if (unidadesMedidaActivas().length === 0) {
+                @if (hayErrorUnidadesMedida()) {
+                  <p class="empty-state">No se pudieron cargar las unidades de medida. Puedes seguir usando productos y variantes.</p>
+                } @else if (unidadesMedidaActivas().length === 0) {
                   <p class="empty-state">No hay unidades de medida disponibles para crear presentaciones.</p>
                 }
 

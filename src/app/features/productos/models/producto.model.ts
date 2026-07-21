@@ -49,7 +49,8 @@ export interface UnidadMedidaResponse {
   readonly codigo: string;
   readonly nombre: string;
   readonly abreviatura?: string | null;
-  readonly activo: boolean;
+  readonly activo?: boolean | null;
+  readonly activa?: boolean | null;
 }
 
 export interface ProductoPresentacionResponse {

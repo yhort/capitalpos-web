@@ -214,6 +214,57 @@ describe('ProductosPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('59.90');
   });
 
+  it('shows active units in the presentation selector when unidades-medida returns catalog values', async () => {
+    productosApi.unidadesMedida = [
+      crearUnidadMedidaResponse({ id: 'unidad-caj', codigo: 'CAJ', nombre: 'Caja', abreviatura: 'CAJ', activo: undefined, activa: true }),
+      crearUnidadMedidaResponse({ id: 'unidad-doc', codigo: 'DOC', nombre: 'Docena', abreviatura: 'DOC', activo: undefined, activa: true }),
+      crearUnidadMedidaResponse({ id: 'unidad-kg', codigo: 'KG', nombre: 'Kilogramo', abreviatura: 'KG', activo: undefined, activa: true }),
+      crearUnidadMedidaResponse({ id: 'unidad-paq', codigo: 'PAQ', nombre: 'Paquete', abreviatura: 'PAQ', activo: undefined, activa: true }),
+      crearUnidadMedidaResponse({ id: 'unidad-und', codigo: 'UND', nombre: 'Unidad', abreviatura: 'UND', activo: undefined, activa: true }),
+    ];
+    fixture = TestBed.createComponent(ProductosPageComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    component['alternarVariantes'](productosApi.productos[0]);
+    fixture.detectChanges();
+
+    const unidadSelect = fixture.nativeElement.querySelector(
+      'select[formcontrolname="unidadMedidaId"]',
+    ) as HTMLSelectElement;
+    const optionTexts = Array.from(unidadSelect.options).map((option) => option.textContent?.trim());
+
+    expect(optionTexts).toContain('CAJ - Caja');
+    expect(optionTexts).toContain('DOC - Docena');
+    expect(optionTexts).toContain('KG - Kilogramo');
+    expect(optionTexts).toContain('PAQ - Paquete');
+    expect(optionTexts).toContain('UND - Unidad');
+    expect(fixture.nativeElement.textContent).not.toContain('No hay unidades de medida disponibles para crear presentaciones.');
+  });
+
+  it('shows a clear units loading error and keeps products and variants usable', async () => {
+    productosApi.listarUnidadesMedidaError = new HttpErrorResponse({
+      status: 500,
+      error: {
+        mensaje: 'No se pudieron cargar unidades de medida.',
+      },
+    });
+    fixture = TestBed.createComponent(ProductosPageComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    component['alternarVariantes'](productosApi.productos[0]);
+    fixture.detectChanges();
+
+    const textContent = fixture.nativeElement.textContent;
+
+    expect(textContent).toContain('Polo demo');
+    expect(textContent).toContain('POL-BRO-NEG-S');
+    expect(textContent).toContain('No se pudieron cargar las unidades de medida. Puedes seguir usando productos y variantes.');
+  });
+
   it('creates a product presentation', () => {
     component['alternarVariantes'](productosApi.productos[0]);
     component['presentacionForm'].patchValue({
@@ -393,6 +444,7 @@ class ProductosApiServiceFake {
   ultimoDesactivar: { productoId: string; varianteId: string } | null = null;
   crearVarianteError: HttpErrorResponse | null = null;
   crearPresentacionError: HttpErrorResponse | null = null;
+  listarUnidadesMedidaError: HttpErrorResponse | null = null;
   listarUnidadesMedidaCalls = 0;
   productos: readonly ProductoResponse[] = [
     {
@@ -449,6 +501,9 @@ class ProductosApiServiceFake {
 
   listarUnidadesMedida() {
     this.listarUnidadesMedidaCalls += 1;
+    if (this.listarUnidadesMedidaError) {
+      return throwError(() => this.listarUnidadesMedidaError);
+    }
     return of(this.unidadesMedida);
   }
 
