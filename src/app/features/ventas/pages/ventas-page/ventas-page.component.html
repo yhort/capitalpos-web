@@ -40,6 +40,28 @@
         </label>
 
         @if (productoForm.controls.productoId.value; as productoId) {
+          @if (obtenerPresentacionesActivas(productoId).length > 0) {
+            <label class="inline-form__full">
+              <span>Presentación</span>
+              <select formControlName="productoPresentacionId" [disabled]="estado() === 'guardando'" (change)="alCambiarPresentacion()">
+                <option value="">Sin presentación</option>
+                @for (presentacion of obtenerPresentacionesActivas(productoId); track presentacion.id) {
+                  <option [value]="presentacion.id">
+                    {{ obtenerTextoPresentacion(presentacion) }}
+                  </option>
+                }
+              </select>
+            </label>
+
+            @if (productoForm.controls.productoPresentacionId.value; as presentacionId) {
+              @if (obtenerPresentacionSeleccionada(productoId, presentacionId); as presentacion) {
+                <p class="variant-stock inline-form__full">
+                  Precio definido por backend: S/ {{ presentacion.precioVenta | number: '1.2-2' }} · consumo estimado {{ presentacion.factorConversion | number: '1.0-3' }} por unidad.
+                </p>
+              }
+            }
+          }
+
           @if (obtenerVariantesActivas(productoId).length > 0) {
             <label class="inline-form__full">
               <span>Variante</span>
@@ -102,6 +124,7 @@
                 <strong>{{ producto.nombre }}</strong>
                 <span>{{ producto.codigoSku || 'sin SKU' }}</span>
                 <span>{{ obtenerTextoVariantes(producto.id) }}</span>
+                <span>{{ obtenerTextoPresentaciones(producto.id) }}</span>
               </div>
 
               @if (obtenerStock(producto.id); as stockEstado) {
@@ -264,13 +287,13 @@
             <span></span>
           </div>
 
-          @for (item of items(); track item.producto.id + ':' + (item.variante?.id || 'base')) {
+          @for (item of items(); track item.producto.id + ':' + (item.variante?.id || 'base') + ':' + (item.presentacion?.id || 'sin-presentacion')) {
             <div class="sale-items__row" role="row">
               <span>{{ obtenerDescripcionItem(item) }}</span>
               <span>{{ item.cantidad | number: '1.2-2' }}</span>
-              <span>{{ obtenerStockLibreItem(item) === null ? 'No disponible' : (obtenerStockLibreItem(item) | number: '1.0-3') }}</span>
+              <span>{{ obtenerStockLibreItem(item) === null ? 'No disponible' : (obtenerStockLibreItem(item) | number: '1.0-3') }} / consumo {{ obtenerConsumoStockItem(item) | number: '1.0-3' }}</span>
               <span>S/ {{ calcularTotalItem(item) | number: '1.2-2' }}</span>
-              <button type="button" class="icon-button" (click)="quitarProducto(item.producto.id, item.variante?.id ?? null)" aria-label="Quitar producto">
+              <button type="button" class="icon-button" (click)="quitarProducto(item.producto.id, item.variante?.id ?? null, item.presentacion?.id ?? null)" aria-label="Quitar producto">
                 x
               </button>
             </div>

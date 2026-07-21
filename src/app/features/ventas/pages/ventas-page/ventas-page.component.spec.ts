@@ -10,7 +10,7 @@ import { CpeEmisionResponse } from '../../../cpe/models/cpe-emision-response.mod
 import { StockApiService } from '../../../inventario/data-access/stock-api.service';
 import { StockProductoResponse } from '../../../inventario/models/stock.model';
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
-import { ProductoVarianteResponse } from '../../../productos/models/producto.model';
+import { ProductoPresentacionResponse, ProductoVarianteResponse } from '../../../productos/models/producto.model';
 import { SedesApiService } from '../../../sedes/data-access/sedes-api.service';
 import { PuntoVentaResponse, SedeResponse } from '../../../sedes/models/sede.model';
 import { PosApiService } from '../../data-access/pos-api.service';
@@ -205,6 +205,7 @@ describe('VentasPageComponent', () => {
         {
           productoId: 'producto-1',
           productoVarianteId: null,
+          productoPresentacionId: null,
           cantidad: 2,
           precioUnitario: 11.8,
           igv: 3.6,
@@ -267,9 +268,29 @@ describe('VentasPageComponent', () => {
       expect.objectContaining({
         productoId: 'producto-1',
         productoVarianteId: null,
+        productoPresentacionId: null,
         cantidad: 1,
       }),
     ]);
+  });
+
+  it('loads presentations when products are loaded and shows the presentation selector', async () => {
+    productosApi.presentaciones.set('producto-1', [crearPresentacionResponse()]);
+
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+    });
+    fixture.detectChanges();
+
+    const presentationSelect = fixture.nativeElement.querySelector(
+      'select[formcontrolname="productoPresentacionId"]',
+    ) as HTMLSelectElement;
+
+    expect(productosApi.listarPresentacionesCalls.get('producto-1')).toBe(1);
+    expect(presentationSelect).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('UND - Unidad - factor 1 - S/ 11.80');
   });
 
   it('loads active variants and does not add variant products without selecting one', async () => {
@@ -309,7 +330,7 @@ describe('VentasPageComponent', () => {
     expect(productosApi.listarVariantesCalls.get('producto-2')).toBe(1);
     expect(component['obtenerVariantesActivas']('producto-2').map((variante) => variante.id)).toEqual(['variante-1']);
     expect(component['items']()).toEqual([]);
-    expect(component['mensaje']()).toBe('Selecciona una variante antes de agregar el producto.');
+    expect(component['mensaje']()).toBe('Selecciona una variante o presentación antes de agregar el producto.');
   });
 
   it('queries variant stock when selecting a variant', async () => {
@@ -441,9 +462,167 @@ describe('VentasPageComponent', () => {
       expect.objectContaining({
         productoId: 'producto-2',
         productoVarianteId: 'variante-1',
+        productoPresentacionId: null,
         cantidad: 2,
       }),
     ]);
+  });
+
+  it('adds a product with presentation and sends productoPresentacionId when selling', async () => {
+    productosApi.presentaciones.set('producto-1', [
+      crearPresentacionResponse({
+        id: 'presentacion-docena',
+        unidadCodigo: 'DOC',
+        unidadNombre: 'Docena',
+        factorConversion: 12,
+        precioVenta: 120,
+        codigoBarras: '775000000120',
+      }),
+    ]);
+    stockApi.stocks.set('producto-1', crearStockResponse({
+      cantidadDisponible: 30,
+      stockLibre: 30,
+    }));
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      productoPresentacionId: 'presentacion-docena',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Polo - DOC - Docena - factor 12 - S/ 120.00 - CB 775000000120');
+    expect(fixture.nativeElement.textContent).toContain('consumo 12');
+
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest?.detalles).toEqual([
+      expect.objectContaining({
+        productoId: 'producto-1',
+        productoVarianteId: null,
+        productoPresentacionId: 'presentacion-docena',
+        cantidad: 1,
+        precioUnitario: 120,
+        total: 120,
+      }),
+    ]);
+  });
+
+  it('keeps base product sales without presentation as before', async () => {
+    productosApi.presentaciones.set('producto-1', [crearPresentacionResponse()]);
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      productoPresentacionId: '',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest?.detalles).toEqual([
+      expect.objectContaining({
+        productoId: 'producto-1',
+        productoVarianteId: null,
+        productoPresentacionId: null,
+      }),
+    ]);
+  });
+
+  it('allows selling a variant with presentation and sends both identifiers', async () => {
+    posApi.productos = [crearProductoResponse({
+      id: 'producto-2',
+      nombre: 'Polo Brooklyn',
+      precioVenta: 20,
+    })];
+    productosApi.variantes.set('producto-2', [crearVarianteResponse()]);
+    productosApi.presentaciones.set('producto-2', [
+      crearPresentacionResponse({
+        id: 'presentacion-pack',
+        productoId: 'producto-2',
+        unidadCodigo: 'PACK',
+        unidadNombre: 'Pack',
+        factorConversion: 2,
+        precioVenta: 38,
+      }),
+    ]);
+    stockApi.stocksVariantes.set('producto-2:variante-1', crearStockResponse({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      cantidadDisponible: 8,
+      stockLibre: 8,
+    }));
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-2',
+      productoVarianteId: 'variante-1',
+      productoPresentacionId: 'presentacion-pack',
+      cantidad: 2,
+    });
+    component['alCambiarVariante']();
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest?.detalles).toEqual([
+      expect.objectContaining({
+        productoId: 'producto-2',
+        productoVarianteId: 'variante-1',
+        productoPresentacionId: 'presentacion-pack',
+        cantidad: 2,
+        precioUnitario: 38,
+      }),
+    ]);
+  });
+
+  it('blocks obvious stock errors when presentation factor exceeds free stock', async () => {
+    productosApi.presentaciones.set('producto-1', [
+      crearPresentacionResponse({
+        id: 'presentacion-caja',
+        factorConversion: 3,
+        precioVenta: 30,
+      }),
+    ]);
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      productoPresentacionId: 'presentacion-caja',
+      cantidad: 2,
+    });
+
+    component['agregarProducto']();
+
+    expect(component['items']()).toEqual([]);
+    expect(component['mensaje']()).toBe('Stock insuficiente para la cantidad solicitada.');
+    expect(posApi.ultimaVentaRequest).toBeNull();
+  });
+
+  it('shows backend stock errors for presentation sales without clearing the cart', async () => {
+    productosApi.presentaciones.set('producto-1', [crearPresentacionResponse()]);
+    await crearComponente();
+    posApi.crearVentaError = new HttpErrorResponse({
+      status: 400,
+      error: {
+        mensaje: 'Stock insuficiente para la presentacion seleccionada.',
+      },
+    });
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      productoPresentacionId: 'presentacion-1',
+      cantidad: 1,
+    });
+
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(component['items']().length).toBe(1);
+    expect(component['mensaje']()).toBe('Stock insuficiente para la presentacion seleccionada.');
   });
 
   it('refreshes sold variant stock after registering a sale successfully', async () => {
@@ -820,7 +999,11 @@ class PosApiServiceFake {
 
 class ProductosApiServiceFake {
   readonly listarVariantesCalls = new Map<string, number>();
+  readonly listarPresentacionesCalls = new Map<string, number>();
   readonly variantes = new Map<string, readonly ProductoVarianteResponse[]>([
+    ['producto-1', []],
+  ]);
+  readonly presentaciones = new Map<string, readonly ProductoPresentacionResponse[]>([
     ['producto-1', []],
   ]);
 
@@ -831,6 +1014,15 @@ class ProductosApiServiceFake {
     );
 
     return of(this.variantes.get(productoId) ?? []);
+  }
+
+  listarPresentaciones(productoId: string) {
+    this.listarPresentacionesCalls.set(
+      productoId,
+      (this.listarPresentacionesCalls.get(productoId) ?? 0) + 1,
+    );
+
+    return of(this.presentaciones.get(productoId) ?? []);
   }
 }
 
@@ -909,6 +1101,27 @@ function crearVarianteResponse(overrides: Partial<ProductoVarianteResponse> = {}
     codigoBarras: '775000000002',
     activo: true,
     fechaCreacion: '2026-07-15T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearPresentacionResponse(
+  overrides: Partial<ProductoPresentacionResponse> = {},
+): ProductoPresentacionResponse {
+  return {
+    id: 'presentacion-1',
+    empresaId: 'empresa-1',
+    productoId: 'producto-1',
+    productoVarianteId: null,
+    unidadMedidaId: 'unidad-1',
+    unidadCodigo: 'UND',
+    unidadNombre: 'Unidad',
+    factorConversion: 1,
+    esUnidadBase: true,
+    precioVenta: 11.8,
+    codigoBarras: null,
+    activo: true,
+    fechaCreacion: '2026-07-20T10:00:00Z',
     ...overrides,
   };
 }

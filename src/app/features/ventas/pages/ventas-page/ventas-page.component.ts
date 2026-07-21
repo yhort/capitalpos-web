@@ -17,7 +17,7 @@ import {
 import { StockApiService } from '../../../inventario/data-access/stock-api.service';
 import { StockProductoResponse } from '../../../inventario/models/stock.model';
 import { ProductosApiService } from '../../../productos/data-access/productos-api.service';
-import { ProductoVarianteResponse } from '../../../productos/models/producto.model';
+import { ProductoPresentacionResponse, ProductoVarianteResponse } from '../../../productos/models/producto.model';
 import { SedesApiService } from '../../../sedes/data-access/sedes-api.service';
 import { PuntoVentaResponse, SedeResponse } from '../../../sedes/models/sede.model';
 import { PosApiService } from '../../data-access/pos-api.service';
@@ -28,6 +28,7 @@ import { CanalVenta, CrearVentaRequest, EmitirCpeDesdeVentaRequest, VentaRespons
 interface PosItem {
   readonly producto: ProductoResponse;
   readonly variante: ProductoVarianteResponse | null;
+  readonly presentacion: ProductoPresentacionResponse | null;
   readonly cantidad: number;
 }
 
@@ -49,6 +50,16 @@ type VariantesProductoEstado =
   | {
       readonly estado: 'disponible';
       readonly variantes: readonly ProductoVarianteResponse[];
+    };
+
+type PresentacionesProductoEstado =
+  | {
+      readonly estado: 'cargando' | 'no-disponible';
+      readonly presentaciones: readonly ProductoPresentacionResponse[];
+    }
+  | {
+      readonly estado: 'disponible';
+      readonly presentaciones: readonly ProductoPresentacionResponse[];
     };
 
 type PosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
@@ -88,6 +99,7 @@ export class VentasPageComponent implements OnInit {
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
   protected readonly stockProductos = signal<Readonly<Record<string, StockProductoEstado>>>({});
   protected readonly variantesProductos = signal<Readonly<Record<string, VariantesProductoEstado>>>({});
+  protected readonly presentacionesProductos = signal<Readonly<Record<string, PresentacionesProductoEstado>>>({});
   protected readonly stockVariantes = signal<Readonly<Record<string, StockProductoEstado>>>({});
   protected readonly clientes = signal<readonly ClienteResponse[]>([]);
   protected readonly sedes = signal<readonly SedeResponse[]>([]);
@@ -105,6 +117,7 @@ export class VentasPageComponent implements OnInit {
   protected readonly productoForm = this.formBuilder.nonNullable.group({
     productoId: ['', Validators.required],
     productoVarianteId: [''],
+    productoPresentacionId: [''],
     cantidad: [1, [Validators.required, Validators.min(0.01)]],
   });
 
@@ -227,7 +240,7 @@ export class VentasPageComponent implements OnInit {
       return;
     }
 
-    const { productoId, productoVarianteId, cantidad } = this.productoForm.getRawValue();
+    const { productoId, productoVarianteId, productoPresentacionId, cantidad } = this.productoForm.getRawValue();
     const producto = this.productosActivos().find((item) => item.id === productoId);
 
     if (!producto) {
@@ -236,13 +249,22 @@ export class VentasPageComponent implements OnInit {
     }
 
     const variantesActivas = this.obtenerVariantesActivas(producto.id);
-    const requiereVariante = variantesActivas.length > 0;
-    const variante = requiereVariante
+    const presentacionesActivas = this.obtenerPresentacionesActivas(producto.id);
+    const presentacion = productoPresentacionId
+      ? presentacionesActivas.find((item) => item.id === productoPresentacionId) ?? null
+      : null;
+    const requiereVariante = variantesActivas.length > 0 && !presentacion;
+    const variante = productoVarianteId
       ? variantesActivas.find((item) => item.id === productoVarianteId) ?? null
       : null;
 
     if (requiereVariante && !variante) {
-      this.mensaje.set('Selecciona una variante antes de agregar el producto.');
+      this.mensaje.set('Selecciona una variante o presentación antes de agregar el producto.');
+      return;
+    }
+
+    if (productoPresentacionId && !presentacion) {
+      this.mensaje.set('Selecciona una presentación activa.');
       return;
     }
 
@@ -264,11 +286,19 @@ export class VentasPageComponent implements OnInit {
       return;
     }
 
-    const cantidadEnCarrito = this.items()
-      .filter((item) => item.producto.id === producto.id && item.variante?.id === variante?.id)
-      .reduce((total, item) => total + item.cantidad, 0);
+    const consumoSeleccion = this.calcularConsumoStock(cantidad, presentacion);
+    const consumoEnCarrito = this.items()
+      .filter((item) =>
+        item.producto.id === producto.id &&
+        item.variante?.id === variante?.id)
+      .reduce((total, item) => total + this.calcularConsumoStock(item.cantidad, item.presentacion), 0);
 
-    if (redondear(cantidadEnCarrito + cantidad) > stockLibre) {
+    if (redondear(consumoEnCarrito + consumoSeleccion) > stockLibre) {
+      if (variante && presentacion) {
+        this.mensaje.set('Stock insuficiente para la variante o presentación seleccionada.');
+        return;
+      }
+
       this.mensaje.set(variante
         ? 'Stock insuficiente para la variante seleccionada.'
         : 'Stock insuficiente para la cantidad solicitada.');
@@ -277,42 +307,61 @@ export class VentasPageComponent implements OnInit {
 
     this.items.update((items) => {
       const existente = items.find((item) =>
-        item.producto.id === producto.id && item.variante?.id === variante?.id,
+        item.producto.id === producto.id &&
+        item.variante?.id === variante?.id &&
+        item.presentacion?.id === presentacion?.id,
       );
 
       if (existente) {
         return items.map((item) =>
-          item.producto.id === producto.id && item.variante?.id === variante?.id
+          item.producto.id === producto.id &&
+          item.variante?.id === variante?.id &&
+          item.presentacion?.id === presentacion?.id
             ? { ...item, cantidad: redondear(item.cantidad + cantidad) }
             : item,
         );
       }
 
-      return [...items, { producto, variante, cantidad }];
+      return [...items, { producto, variante, presentacion, cantidad }];
     });
 
     this.ultimaVenta.set(null);
     this.mensaje.set('');
-    this.productoForm.patchValue({ productoId: '', productoVarianteId: '', cantidad: 1 });
+    this.productoForm.patchValue({
+      productoId: '',
+      productoVarianteId: '',
+      productoPresentacionId: '',
+      cantidad: 1,
+    });
   }
 
-  protected quitarProducto(productoId: string, productoVarianteId: string | null): void {
+  protected quitarProducto(
+    productoId: string,
+    productoVarianteId: string | null,
+    productoPresentacionId: string | null,
+  ): void {
     if (this.estado() === 'guardando') {
       return;
     }
 
     this.items.update((items) => items.filter((item) =>
-      item.producto.id !== productoId || item.variante?.id !== productoVarianteId,
+      item.producto.id !== productoId ||
+      item.variante?.id !== productoVarianteId ||
+      item.presentacion?.id !== productoPresentacionId,
     ));
     this.ultimaVenta.set(null);
   }
 
   protected alCambiarProducto(): void {
     const productoId = this.productoForm.controls.productoId.value;
-    this.productoForm.patchValue({ productoVarianteId: '' });
+    this.productoForm.patchValue({ productoVarianteId: '', productoPresentacionId: '' });
 
     if (productoId && !this.obtenerVariantes(productoId)) {
       this.cargarVariantesProducto(productoId);
+    }
+
+    if (productoId && !this.obtenerPresentaciones(productoId)) {
+      this.cargarPresentacionesProducto(productoId);
     }
   }
 
@@ -322,6 +371,17 @@ export class VentasPageComponent implements OnInit {
     if (productoId && productoVarianteId) {
       this.cargarStockVariante(productoId, productoVarianteId);
     }
+  }
+
+  protected alCambiarPresentacion(): void {
+    const { productoId, productoPresentacionId } = this.productoForm.getRawValue();
+
+    if (productoId && productoPresentacionId && !this.obtenerPresentacionSeleccionada(productoId, productoPresentacionId)) {
+      this.mensaje.set('Selecciona una presentación activa.');
+      return;
+    }
+
+    this.mensaje.set('');
   }
 
   protected alCambiarSede(): void {
@@ -499,7 +559,7 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected calcularTotalItem(item: PosItem): number {
-    return redondear(item.cantidad * item.producto.precioVenta);
+    return redondear(item.cantidad * this.obtenerPrecioUnitarioItem(item));
   }
 
   protected obtenerStock(productoId: string): StockProductoEstado | null {
@@ -524,11 +584,29 @@ export class VentasPageComponent implements OnInit {
     return this.variantesProductos()[productoId] ?? null;
   }
 
+  protected obtenerPresentaciones(productoId: string): PresentacionesProductoEstado | null {
+    return this.presentacionesProductos()[productoId] ?? null;
+  }
+
   protected obtenerVariantesActivas(productoId: string): readonly ProductoVarianteResponse[] {
     const variantes = this.obtenerVariantes(productoId);
     return variantes?.estado === 'disponible'
       ? variantes.variantes.filter((variante) => variante.activo)
       : [];
+  }
+
+  protected obtenerPresentacionesActivas(productoId: string): readonly ProductoPresentacionResponse[] {
+    const presentaciones = this.obtenerPresentaciones(productoId);
+    return presentaciones?.estado === 'disponible'
+      ? presentaciones.presentaciones.filter((presentacion) => presentacion.activo)
+      : [];
+  }
+
+  protected obtenerPresentacionSeleccionada(
+    productoId: string,
+    presentacionId: string,
+  ): ProductoPresentacionResponse | null {
+    return this.obtenerPresentacionesActivas(productoId).find((presentacion) => presentacion.id === presentacionId) ?? null;
   }
 
   protected obtenerTextoStock(productoId: string): string {
@@ -568,6 +646,21 @@ export class VentasPageComponent implements OnInit {
     return activas > 0 ? `${activas} variantes activas` : 'Sin variantes activas';
   }
 
+  protected obtenerTextoPresentaciones(productoId: string): string {
+    const presentaciones = this.obtenerPresentaciones(productoId);
+
+    if (!presentaciones || presentaciones.estado === 'cargando') {
+      return 'Consultando presentaciones...';
+    }
+
+    if (presentaciones.estado === 'no-disponible') {
+      return 'Presentaciones no disponibles.';
+    }
+
+    const activas = presentaciones.presentaciones.filter((presentacion) => presentacion.activo).length;
+    return activas > 0 ? `${activas} presentaciones activas` : 'Sin presentaciones activas';
+  }
+
   protected obtenerTextoVariante(variante: ProductoVarianteResponse): string {
     const atributos = [variante.color, variante.talla].filter((valor) => !!valor);
     const descripcion = atributos.length > 0 ? atributos.join(' / ') : 'Variante';
@@ -576,16 +669,38 @@ export class VentasPageComponent implements OnInit {
     return [descripcion, sku, barras].filter((valor) => !!valor).join(' - ');
   }
 
+  protected obtenerTextoPresentacion(presentacion: ProductoPresentacionResponse): string {
+    const precio = `S/ ${presentacion.precioVenta.toFixed(2)}`;
+    const factor = `factor ${formatearCantidad(presentacion.factorConversion)}`;
+    const barras = presentacion.codigoBarras ? `CB ${presentacion.codigoBarras}` : '';
+    return [
+      `${presentacion.unidadCodigo} - ${presentacion.unidadNombre}`,
+      factor,
+      precio,
+      barras,
+    ].filter((valor) => !!valor).join(' - ');
+  }
+
   protected obtenerDescripcionItem(item: PosItem): string {
-    return item.variante
-      ? `${item.producto.nombre} - ${this.obtenerTextoVariante(item.variante)}`
-      : item.producto.nombre;
+    return [
+      item.producto.nombre,
+      item.variante ? this.obtenerTextoVariante(item.variante) : '',
+      item.presentacion ? this.obtenerTextoPresentacion(item.presentacion) : '',
+    ].filter((valor) => !!valor).join(' - ');
   }
 
   protected obtenerStockLibreItem(item: PosItem): number | null {
     return item.variante
       ? this.obtenerStockLibreVariante(item.producto.id, item.variante.id)
       : this.obtenerStockLibre(item.producto.id);
+  }
+
+  protected obtenerConsumoStockItem(item: PosItem): number {
+    return this.calcularConsumoStock(item.cantidad, item.presentacion);
+  }
+
+  protected obtenerPrecioUnitarioItem(item: PosItem): number {
+    return item.presentacion?.precioVenta ?? item.producto.precioVenta;
   }
 
   protected obtenerEtiquetaCanalVenta(canal: string): string {
@@ -607,19 +722,25 @@ export class VentasPageComponent implements OnInit {
   }
 
   protected puedeAgregarSeleccionActual(): boolean {
-    const { productoId, productoVarianteId } = this.productoForm.getRawValue();
+    const { productoId, productoVarianteId, productoPresentacionId, cantidad } = this.productoForm.getRawValue();
 
     if (!productoId) {
       return false;
     }
 
     const variantesActivas = this.obtenerVariantesActivas(productoId);
+    const presentacion = productoPresentacionId
+      ? this.obtenerPresentacionSeleccionada(productoId, productoPresentacionId)
+      : null;
+    const stockLibre = productoVarianteId
+      ? this.obtenerStockLibreVariante(productoId, productoVarianteId)
+      : this.obtenerStockLibre(productoId);
 
-    if (variantesActivas.length > 0) {
-      return !!productoVarianteId && (this.obtenerStockLibreVariante(productoId, productoVarianteId) ?? 0) > 0;
+    if (variantesActivas.length > 0 && !productoVarianteId && !presentacion) {
+      return false;
     }
 
-    return this.puedeAgregarProducto(productoId);
+    return stockLibre !== null && stockLibre > 0 && this.calcularConsumoStock(cantidad, presentacion) <= stockLibre;
   }
 
   private construirVentaRequest(): CrearVentaRequest {
@@ -634,8 +755,9 @@ export class VentasPageComponent implements OnInit {
       detalles: this.items().map((item) => ({
         productoId: item.producto.id,
         productoVarianteId: item.variante?.id ?? null,
+        productoPresentacionId: item.presentacion?.id ?? null,
         cantidad: item.cantidad,
-        precioUnitario: item.producto.precioVenta,
+        precioUnitario: this.obtenerPrecioUnitarioItem(item),
         igv: this.calcularIgvItem(item),
         total: this.calcularTotalItem(item),
       })),
@@ -651,6 +773,13 @@ export class VentasPageComponent implements OnInit {
       correlativo: normalizarCorrelativoCompatibilidad(form.correlativo),
       rucEmisor: form.rucEmisor.trim(),
     };
+  }
+
+  private calcularConsumoStock(
+    cantidad: number,
+    presentacion: ProductoPresentacionResponse | null,
+  ): number {
+    return redondear(cantidad * (presentacion?.factorConversion ?? 1));
   }
 
   private aplicarResultadoEmision(response: ApiResponse<CpeEmisionResponse>): void {
@@ -686,6 +815,7 @@ export class VentasPageComponent implements OnInit {
     if (productosActivos.length === 0) {
       this.stockProductos.set({});
       this.variantesProductos.set({});
+      this.presentacionesProductos.set({});
       this.stockVariantes.set({});
       this.estado.set('listo');
       this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados.' : '');
@@ -717,13 +847,24 @@ export class VentasPageComponent implements OnInit {
         } satisfies VariantesProductoEstado,
       ]),
     ));
+    this.presentacionesProductos.set(Object.fromEntries(
+      productosActivos.map((producto) => [
+        producto.id,
+        {
+          estado: 'cargando',
+          presentaciones: [],
+        } satisfies PresentacionesProductoEstado,
+      ]),
+    ));
 
     forkJoin({
       stockEntries: forkJoin(productosActivos.map((producto) => this.obtenerStockProductoEntry(producto.id))),
       variantesEntries: forkJoin(productosActivos.map((producto) => this.obtenerVariantesProductoEntry(producto.id))),
-    }).subscribe(({ stockEntries, variantesEntries }) => {
+      presentacionesEntries: forkJoin(productosActivos.map((producto) => this.obtenerPresentacionesProductoEntry(producto.id))),
+    }).subscribe(({ stockEntries, variantesEntries, presentacionesEntries }) => {
       this.stockProductos.set(Object.fromEntries(stockEntries));
       this.variantesProductos.set(Object.fromEntries(variantesEntries));
+      this.presentacionesProductos.set(Object.fromEntries(presentacionesEntries));
       this.estado.set('listo');
       this.mensaje.set(mostrarMensaje ? 'Productos, clientes y stock actualizados.' : '');
     });
@@ -762,6 +903,17 @@ export class VentasPageComponent implements OnInit {
 
     this.obtenerVariantesProductoEntry(productoId).subscribe(([id, variantes]) => {
       this.actualizarVariantesProducto(id, variantes);
+    });
+  }
+
+  private cargarPresentacionesProducto(productoId: string): void {
+    this.actualizarPresentacionesProducto(productoId, {
+      estado: 'cargando',
+      presentaciones: [],
+    });
+
+    this.obtenerPresentacionesProductoEntry(productoId).subscribe(([id, presentaciones]) => {
+      this.actualizarPresentacionesProducto(id, presentaciones);
     });
   }
 
@@ -908,9 +1060,35 @@ export class VentasPageComponent implements OnInit {
     );
   }
 
+  private obtenerPresentacionesProductoEntry(productoId: string) {
+    return this.productosApi.listarPresentaciones(productoId).pipe(
+      map((presentaciones) => [
+        productoId,
+        {
+          estado: 'disponible',
+          presentaciones,
+        } satisfies PresentacionesProductoEstado,
+      ] as const),
+      catchError(() => of([
+        productoId,
+        {
+          estado: 'no-disponible',
+          presentaciones: [],
+        } satisfies PresentacionesProductoEstado,
+      ] as const)),
+    );
+  }
+
   private actualizarVariantesProducto(productoId: string, state: VariantesProductoEstado): void {
     this.variantesProductos.update((variantes) => ({
       ...variantes,
+      [productoId]: state,
+    }));
+  }
+
+  private actualizarPresentacionesProducto(productoId: string, state: PresentacionesProductoEstado): void {
+    this.presentacionesProductos.update((presentaciones) => ({
+      ...presentaciones,
       [productoId]: state,
     }));
   }
@@ -928,6 +1106,26 @@ export class VentasPageComponent implements OnInit {
 
     forkJoin(productosActivos.map((producto) => this.obtenerVariantesProductoEntry(producto.id))).subscribe((variantesEntries) => {
       this.variantesProductos.set(Object.fromEntries(variantesEntries));
+      this.cargarPresentacionesProductosIniciales(productosActivos, mostrarMensaje);
+    });
+  }
+
+  private cargarPresentacionesProductosIniciales(
+    productosActivos: readonly ProductoResponse[],
+    mostrarMensaje: boolean,
+  ): void {
+    this.presentacionesProductos.set(Object.fromEntries(
+      productosActivos.map((producto) => [
+        producto.id,
+        {
+          estado: 'cargando',
+          presentaciones: [],
+        } satisfies PresentacionesProductoEstado,
+      ]),
+    ));
+
+    forkJoin(productosActivos.map((producto) => this.obtenerPresentacionesProductoEntry(producto.id))).subscribe((presentacionesEntries) => {
+      this.presentacionesProductos.set(Object.fromEntries(presentacionesEntries));
       this.estado.set('listo');
       this.mensaje.set(mostrarMensaje ? 'Productos y clientes actualizados. Indica una sede para consultar stock.' : '');
     });

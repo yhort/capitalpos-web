@@ -19,6 +19,7 @@ export interface EmitirCpeDesdeVentaRequest {
 export interface CrearVentaDetalleRequest {
   readonly productoId: string;
   readonly productoVarianteId: string | null;
+  readonly productoPresentacionId?: string | null;
   readonly cantidad: number;
   readonly precioUnitario: number;
   readonly igv: number;
@@ -46,6 +47,7 @@ export interface VentaDetalleResponse {
   readonly id: string;
   readonly productoId: string;
   readonly productoVarianteId: string | null;
+  readonly productoPresentacionId?: string | null;
   readonly cantidad: number;
   readonly precioUnitario: number;
   readonly igv: number;
