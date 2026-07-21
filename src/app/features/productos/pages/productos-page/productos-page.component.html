@@ -47,6 +47,26 @@
           <input type="text" formControlName="codigoBarras" maxlength="80" />
         </label>
 
+        <label>
+          <span>Categoría</span>
+          <select formControlName="categoriaId">
+            <option value="">Sin categoría</option>
+            @for (categoria of categoriasActivas(); track categoria.id) {
+              <option [value]="categoria.id">{{ categoria.nombre }}</option>
+            }
+          </select>
+        </label>
+
+        <label>
+          <span>Marca</span>
+          <select formControlName="marcaId">
+            <option value="">Sin marca</option>
+            @for (marca of marcasActivas(); track marca.id) {
+              <option [value]="marca.id">{{ marca.nombre }}</option>
+            }
+          </select>
+        </label>
+
         @if (productoForm.invalid && productoForm.touched) {
           <div class="form-errors" role="alert">
             @if (productoForm.controls.nombre.invalid) {
@@ -68,6 +88,28 @@
           Crear producto
         </button>
       </form>
+
+      <div class="quick-catalog">
+        <form class="quick-catalog__form" [formGroup]="categoriaForm" (ngSubmit)="crearCategoriaRapida()">
+          <label>
+            <span>Nueva categoría</span>
+            <input type="text" formControlName="nombre" maxlength="120" />
+          </label>
+          <button type="submit" class="ghost-button" [disabled]="catalogoEstado() === 'guardando'">
+            Crear
+          </button>
+        </form>
+
+        <form class="quick-catalog__form" [formGroup]="marcaForm" (ngSubmit)="crearMarcaRapida()">
+          <label>
+            <span>Nueva marca</span>
+            <input type="text" formControlName="nombre" maxlength="120" />
+          </label>
+          <button type="submit" class="ghost-button" [disabled]="catalogoEstado() === 'guardando'">
+            Crear
+          </button>
+        </form>
+      </div>
     </section>
 
     <section class="products-panel products-panel--list" aria-labelledby="catalogo-title">
@@ -92,6 +134,7 @@
           <div class="products-table__row products-table__row--head" role="row">
             <span>Producto</span>
             <span>SKU</span>
+            <span>Categoría / marca</span>
             <span>Precio</span>
             <span>Estado</span>
             <span>Variantes</span>
@@ -104,6 +147,10 @@
                 <small>{{ producto.codigoBarras || 'sin código de barras' }}</small>
               </span>
               <span>{{ producto.codigoSku || 'sin SKU' }}</span>
+              <span>
+                {{ obtenerNombreCategoria(producto.categoriaId) }}
+                <small>{{ obtenerNombreMarca(producto.marcaId) }}</small>
+              </span>
               <span>S/ {{ producto.precioVenta | number: '1.2-2' }}</span>
               <span [class.product-status--inactive]="!producto.activo">
                 {{ producto.activo ? 'Activo' : 'Inactivo' }}

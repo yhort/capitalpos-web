@@ -4,6 +4,8 @@ export interface ProductoResponse {
   readonly nombre: string;
   readonly codigoSku: string;
   readonly codigoBarras: string;
+  readonly categoriaId?: string | null;
+  readonly marcaId?: string | null;
   readonly precioVenta: number;
   readonly costo: number | null;
   readonly activo: boolean;
@@ -15,6 +17,8 @@ export interface CrearProductoRequest {
   readonly precioVenta: number;
   readonly codigoSku: string | null;
   readonly codigoBarras: string | null;
+  readonly categoriaId?: string | null;
+  readonly marcaId?: string | null;
   readonly costo: number | null;
   readonly activo: boolean;
 }

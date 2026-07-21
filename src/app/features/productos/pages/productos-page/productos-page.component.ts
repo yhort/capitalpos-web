@@ -2,7 +2,15 @@ import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { catchError, forkJoin, of } from 'rxjs';
 
+import { CatalogoApiService } from '../../../catalogo/data-access/catalogo-api.service';
+import {
+  CategoriaResponse,
+  CrearCategoriaRequest,
+  CrearMarcaRequest,
+  MarcaResponse,
+} from '../../../catalogo/models/catalogo.model';
 import { ProductosApiService } from '../../data-access/productos-api.service';
 import {
   CrearProductoRequest,
@@ -12,6 +20,7 @@ import {
 } from '../../models/producto.model';
 
 type ProductosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
+type CatalogoEstado = 'cargando' | 'listo' | 'guardando' | 'error';
 type VariantesEstado = 'sin-cargar' | 'cargando' | 'listo' | 'guardando' | 'error';
 
 interface VariantesProductoState {
@@ -28,11 +37,15 @@ interface VariantesProductoState {
 })
 export class ProductosPageComponent implements OnInit {
   private readonly productosApi = inject(ProductosApiService);
+  private readonly catalogoApi = inject(CatalogoApiService);
   private readonly formBuilder = inject(FormBuilder);
 
   protected readonly estado = signal<ProductosEstado>('cargando');
+  protected readonly catalogoEstado = signal<CatalogoEstado>('cargando');
   protected readonly mensaje = signal('');
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
+  protected readonly categorias = signal<readonly CategoriaResponse[]>([]);
+  protected readonly marcas = signal<readonly MarcaResponse[]>([]);
   protected readonly variantesPorProducto = signal<Readonly<Record<string, VariantesProductoState>>>({});
   protected readonly productoExpandidoId = signal<string | null>(null);
   protected readonly busqueda = signal('');
@@ -42,7 +55,17 @@ export class ProductosPageComponent implements OnInit {
     precioVenta: [0, [Validators.required, Validators.min(0.01)]],
     codigoSku: ['', Validators.maxLength(80)],
     codigoBarras: ['', Validators.maxLength(80)],
+    categoriaId: [''],
+    marcaId: [''],
     costo: [null as number | null, Validators.min(0)],
+  });
+
+  protected readonly categoriaForm = this.formBuilder.nonNullable.group({
+    nombre: ['', [Validators.required, Validators.maxLength(120)]],
+  });
+
+  protected readonly marcaForm = this.formBuilder.nonNullable.group({
+    nombre: ['', [Validators.required, Validators.maxLength(120)]],
   });
 
   protected readonly varianteForm = this.formBuilder.nonNullable.group({
@@ -67,22 +90,53 @@ export class ProductosPageComponent implements OnInit {
     );
   });
 
+  protected readonly categoriasActivas = computed(() =>
+    this.categorias().filter((categoria) => categoria.activa),
+  );
+
+  protected readonly marcasActivas = computed(() =>
+    this.marcas().filter((marca) => marca.activa),
+  );
+
   ngOnInit(): void {
     this.cargarProductos();
   }
 
   protected cargarProductos(): void {
     this.estado.set('cargando');
+    this.catalogoEstado.set('cargando');
     this.mensaje.set('');
 
-    this.productosApi.listarProductos().subscribe({
-      next: (productos) => {
+    forkJoin({
+      productos: this.productosApi.listarProductos(),
+      categorias: this.catalogoApi.listarCategorias().pipe(
+        catchError((error: unknown) => {
+          this.catalogoEstado.set('error');
+          this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar las categorías.'));
+          return of<readonly CategoriaResponse[]>([]);
+        }),
+      ),
+      marcas: this.catalogoApi.listarMarcas().pipe(
+        catchError((error: unknown) => {
+          this.catalogoEstado.set('error');
+          this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar las marcas.'));
+          return of<readonly MarcaResponse[]>([]);
+        }),
+      ),
+    }).subscribe({
+      next: ({ productos, categorias, marcas }) => {
         this.productos.set(productos);
+        this.categorias.set(categorias);
+        this.marcas.set(marcas);
         this.estado.set('listo');
+        if (this.catalogoEstado() !== 'error') {
+          this.catalogoEstado.set('listo');
+        }
       },
       error: (error: unknown) => {
         this.estado.set('error');
-        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar los productos.'));
+        this.catalogoEstado.set('error');
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar productos, categorías y marcas.'));
       },
     });
   }
@@ -107,6 +161,8 @@ export class ProductosPageComponent implements OnInit {
           precioVenta: 0,
           codigoSku: '',
           codigoBarras: '',
+          categoriaId: '',
+          marcaId: '',
           costo: null,
         });
         this.productoExpandidoId.set(producto.id);
@@ -127,6 +183,67 @@ export class ProductosPageComponent implements OnInit {
   protected actualizarBusqueda(event: Event): void {
     const target = event.target;
     this.busqueda.set(target instanceof HTMLInputElement ? target.value : '');
+  }
+
+  protected crearCategoriaRapida(): void {
+    this.categoriaForm.markAllAsTouched();
+
+    if (this.categoriaForm.invalid) {
+      this.mensaje.set('Indica un nombre válido para la categoría.');
+      return;
+    }
+
+    const request: CrearCategoriaRequest = {
+      nombre: this.categoriaForm.controls.nombre.value.trim(),
+      categoriaPadreId: null,
+    };
+
+    this.catalogoEstado.set('guardando');
+    this.mensaje.set('');
+
+    this.catalogoApi.crearCategoria(request).subscribe({
+      next: (categoria) => {
+        this.categorias.update((categorias) => [categoria, ...categorias]);
+        this.productoForm.patchValue({ categoriaId: categoria.id });
+        this.categoriaForm.reset({ nombre: '' });
+        this.catalogoEstado.set('listo');
+        this.mensaje.set(`Categoría ${categoria.nombre} creada.`);
+      },
+      error: (error: unknown) => {
+        this.catalogoEstado.set('listo');
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudo crear la categoría.'));
+      },
+    });
+  }
+
+  protected crearMarcaRapida(): void {
+    this.marcaForm.markAllAsTouched();
+
+    if (this.marcaForm.invalid) {
+      this.mensaje.set('Indica un nombre válido para la marca.');
+      return;
+    }
+
+    const request: CrearMarcaRequest = {
+      nombre: this.marcaForm.controls.nombre.value.trim(),
+    };
+
+    this.catalogoEstado.set('guardando');
+    this.mensaje.set('');
+
+    this.catalogoApi.crearMarca(request).subscribe({
+      next: (marca) => {
+        this.marcas.update((marcas) => [marca, ...marcas]);
+        this.productoForm.patchValue({ marcaId: marca.id });
+        this.marcaForm.reset({ nombre: '' });
+        this.catalogoEstado.set('listo');
+        this.mensaje.set(`Marca ${marca.nombre} creada.`);
+      },
+      error: (error: unknown) => {
+        this.catalogoEstado.set('listo');
+        this.mensaje.set(this.obtenerMensajeError(error, 'No se pudo crear la marca.'));
+      },
+    });
   }
 
   protected alternarVariantes(producto: ProductoResponse): void {
@@ -218,6 +335,22 @@ export class ProductosPageComponent implements OnInit {
     return this.obtenerVariantesState(productoId).estado === 'guardando';
   }
 
+  protected obtenerNombreCategoria(categoriaId: string | null | undefined): string {
+    if (!categoriaId) {
+      return 'Sin categoría';
+    }
+
+    return this.categorias().find((categoria) => categoria.id === categoriaId)?.nombre ?? 'Categoría no disponible';
+  }
+
+  protected obtenerNombreMarca(marcaId: string | null | undefined): string {
+    if (!marcaId) {
+      return 'Sin marca';
+    }
+
+    return this.marcas().find((marca) => marca.id === marcaId)?.nombre ?? 'Marca no disponible';
+  }
+
   private construirCrearProductoRequest(): CrearProductoRequest {
     const form = this.productoForm.getRawValue();
 
@@ -226,6 +359,8 @@ export class ProductosPageComponent implements OnInit {
       precioVenta: normalizarNumero(form.precioVenta),
       codigoSku: normalizarTextoNullable(form.codigoSku),
       codigoBarras: normalizarTextoNullable(form.codigoBarras),
+      categoriaId: normalizarTextoNullable(form.categoriaId),
+      marcaId: normalizarTextoNullable(form.marcaId),
       costo: form.costo === null ? null : normalizarNumero(form.costo),
       activo: true,
     };
