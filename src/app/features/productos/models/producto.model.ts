@@ -43,3 +43,35 @@ export interface CrearProductoVarianteRequest {
   readonly codigoBarras: string | null;
   readonly activo: boolean;
 }
+
+export interface UnidadMedidaResponse {
+  readonly id: string;
+  readonly codigo: string;
+  readonly nombre: string;
+  readonly abreviatura?: string | null;
+  readonly activo: boolean;
+}
+
+export interface ProductoPresentacionResponse {
+  readonly id: string;
+  readonly empresaId: string;
+  readonly productoId: string;
+  readonly productoVarianteId: string | null;
+  readonly unidadMedidaId: string;
+  readonly unidadCodigo: string;
+  readonly unidadNombre: string;
+  readonly factorConversion: number;
+  readonly esUnidadBase: boolean;
+  readonly precioVenta: number;
+  readonly codigoBarras: string | null;
+  readonly activo: boolean;
+  readonly fechaCreacion: string;
+}
+
+export interface CrearProductoPresentacionRequest {
+  readonly unidadMedidaId: string;
+  readonly factorConversion: number;
+  readonly esUnidadBase: boolean;
+  readonly precioVenta: number;
+  readonly codigoBarras: string | null;
+}

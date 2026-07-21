@@ -251,6 +251,109 @@
                   </div>
                 }
               </section>
+
+              <section class="variants-panel" aria-label="Presentaciones de producto">
+                <div class="variants-panel__header">
+                  <div>
+                    <h4>Presentaciones de {{ producto.nombre }}</h4>
+                    <p>Define unidades comerciales del producto. POS y stock por presentación quedan para otro bloque.</p>
+                  </div>
+                  <button type="button" class="ghost-button" (click)="cargarPresentaciones(producto.id)" [disabled]="obtenerPresentacionesState(producto.id).estado === 'cargando' || estaGuardandoPresentacion(producto.id)">
+                    Actualizar
+                  </button>
+                </div>
+
+                @if (obtenerPresentacionesState(producto.id).mensaje) {
+                  <p class="variant-message" role="status">{{ obtenerPresentacionesState(producto.id).mensaje }}</p>
+                }
+
+                <form class="variant-form" [formGroup]="presentacionForm" (ngSubmit)="crearPresentacion(producto)">
+                  <label>
+                    <span>Unidad</span>
+                    <select formControlName="unidadMedidaId">
+                      <option value="">Seleccionar</option>
+                      @for (unidad of unidadesMedidaActivas(); track unidad.id) {
+                        <option [value]="unidad.id">{{ obtenerTextoUnidadMedida(unidad) }}</option>
+                      }
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Factor</span>
+                    <input type="number" min="0.0001" step="0.001" formControlName="factorConversion" />
+                  </label>
+
+                  <label>
+                    <span>Precio venta</span>
+                    <input type="number" min="0.01" step="0.01" formControlName="precioVenta" />
+                  </label>
+
+                  <label>
+                    <span>Código barras</span>
+                    <input type="text" maxlength="80" formControlName="codigoBarras" />
+                  </label>
+
+                  <label>
+                    <span>Unidad base</span>
+                    <input type="checkbox" formControlName="esUnidadBase" />
+                  </label>
+
+                  @if (presentacionForm.invalid && presentacionForm.touched) {
+                    <div class="form-errors variant-form__full" role="alert">
+                      @if (presentacionForm.controls.unidadMedidaId.invalid) {
+                        <span>Selecciona una unidad de medida.</span>
+                      }
+                      @if (presentacionForm.controls.factorConversion.invalid) {
+                        <span>El factor de conversión debe ser mayor que cero.</span>
+                      }
+                      @if (presentacionForm.controls.precioVenta.invalid) {
+                        <span>El precio de venta debe ser mayor que cero.</span>
+                      }
+                      @if (presentacionForm.controls.codigoBarras.invalid) {
+                        <span>El código de barras debe tener hasta 80 caracteres.</span>
+                      }
+                    </div>
+                  }
+
+                  <button type="submit" class="primary-button variant-form__full" [disabled]="estaGuardandoPresentacion(producto.id) || unidadesMedidaActivas().length === 0">
+                    Crear presentación
+                  </button>
+                </form>
+
+                @if (unidadesMedidaActivas().length === 0) {
+                  <p class="empty-state">No hay unidades de medida disponibles para crear presentaciones.</p>
+                }
+
+                @if (obtenerPresentacionesState(producto.id).estado === 'cargando') {
+                  <p class="empty-state">Cargando presentaciones...</p>
+                } @else if (obtenerPresentacionesState(producto.id).presentaciones.length === 0) {
+                  <p class="empty-state">Este producto aún no tiene presentaciones.</p>
+                } @else {
+                  <div class="variants-table" role="table" aria-label="Presentaciones registradas">
+                    <div class="variants-table__row variants-table__row--head" role="row">
+                      <span>Unidad</span>
+                      <span>Factor</span>
+                      <span>Precio</span>
+                      <span>Código barras</span>
+                      <span>Base</span>
+                      <span>Estado</span>
+                    </div>
+
+                    @for (presentacion of obtenerPresentacionesState(producto.id).presentaciones; track presentacion.id) {
+                      <div class="variants-table__row" role="row">
+                        <span>{{ presentacion.unidadCodigo }} · {{ presentacion.unidadNombre }}</span>
+                        <span>{{ presentacion.factorConversion | number: '1.0-3' }}</span>
+                        <span>S/ {{ presentacion.precioVenta | number: '1.2-2' }}</span>
+                        <span>{{ presentacion.codigoBarras || 'sin código' }}</span>
+                        <span>{{ presentacion.esUnidadBase ? 'Sí' : 'No' }}</span>
+                        <span [class.product-status--inactive]="!presentacion.activo">
+                          {{ presentacion.activo ? 'Activa' : 'Inactiva' }}
+                        </span>
+                      </div>
+                    }
+                  </div>
+                }
+              </section>
             }
           }
         </div>

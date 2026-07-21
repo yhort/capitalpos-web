@@ -4,9 +4,12 @@ import { Observable } from 'rxjs';
 
 import {
   CrearProductoRequest,
+  CrearProductoPresentacionRequest,
   CrearProductoVarianteRequest,
+  ProductoPresentacionResponse,
   ProductoResponse,
   ProductoVarianteResponse,
+  UnidadMedidaResponse,
 } from '../models/producto.model';
 
 @Injectable({
@@ -21,6 +24,21 @@ export class ProductosApiService {
 
   crearProducto(request: CrearProductoRequest): Observable<ProductoResponse> {
     return this.http.post<ProductoResponse>('/api/productos/', request);
+  }
+
+  listarUnidadesMedida(): Observable<readonly UnidadMedidaResponse[]> {
+    return this.http.get<readonly UnidadMedidaResponse[]>('/api/unidades-medida');
+  }
+
+  listarPresentaciones(productoId: string): Observable<readonly ProductoPresentacionResponse[]> {
+    return this.http.get<readonly ProductoPresentacionResponse[]>(`/api/productos/${productoId}/presentaciones`);
+  }
+
+  crearPresentacion(
+    productoId: string,
+    request: CrearProductoPresentacionRequest,
+  ): Observable<ProductoPresentacionResponse> {
+    return this.http.post<ProductoPresentacionResponse>(`/api/productos/${productoId}/presentaciones`, request);
   }
 
   listarVariantes(productoId: string): Observable<readonly ProductoVarianteResponse[]> {

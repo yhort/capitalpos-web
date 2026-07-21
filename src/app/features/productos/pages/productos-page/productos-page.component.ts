@@ -14,18 +14,28 @@ import {
 import { ProductosApiService } from '../../data-access/productos-api.service';
 import {
   CrearProductoRequest,
+  CrearProductoPresentacionRequest,
   CrearProductoVarianteRequest,
+  ProductoPresentacionResponse,
   ProductoResponse,
   ProductoVarianteResponse,
+  UnidadMedidaResponse,
 } from '../../models/producto.model';
 
 type ProductosEstado = 'cargando' | 'listo' | 'guardando' | 'error';
 type CatalogoEstado = 'cargando' | 'listo' | 'guardando' | 'error';
 type VariantesEstado = 'sin-cargar' | 'cargando' | 'listo' | 'guardando' | 'error';
+type PresentacionesEstado = 'sin-cargar' | 'cargando' | 'listo' | 'guardando' | 'error';
 
 interface VariantesProductoState {
   readonly estado: VariantesEstado;
   readonly variantes: readonly ProductoVarianteResponse[];
+  readonly mensaje: string;
+}
+
+interface PresentacionesProductoState {
+  readonly estado: PresentacionesEstado;
+  readonly presentaciones: readonly ProductoPresentacionResponse[];
   readonly mensaje: string;
 }
 
@@ -46,7 +56,9 @@ export class ProductosPageComponent implements OnInit {
   protected readonly productos = signal<readonly ProductoResponse[]>([]);
   protected readonly categorias = signal<readonly CategoriaResponse[]>([]);
   protected readonly marcas = signal<readonly MarcaResponse[]>([]);
+  protected readonly unidadesMedida = signal<readonly UnidadMedidaResponse[]>([]);
   protected readonly variantesPorProducto = signal<Readonly<Record<string, VariantesProductoState>>>({});
+  protected readonly presentacionesPorProducto = signal<Readonly<Record<string, PresentacionesProductoState>>>({});
   protected readonly productoExpandidoId = signal<string | null>(null);
   protected readonly busqueda = signal('');
 
@@ -75,6 +87,14 @@ export class ProductosPageComponent implements OnInit {
     codigoBarras: ['', Validators.maxLength(80)],
   });
 
+  protected readonly presentacionForm = this.formBuilder.nonNullable.group({
+    unidadMedidaId: ['', Validators.required],
+    factorConversion: [1, [Validators.required, Validators.min(0.0001)]],
+    esUnidadBase: [false],
+    precioVenta: [0, [Validators.required, Validators.min(0.01)]],
+    codigoBarras: ['', Validators.maxLength(80)],
+  });
+
   protected readonly productosFiltrados = computed(() => {
     const busqueda = this.busqueda().trim().toLowerCase();
     const productos = this.productos();
@@ -98,6 +118,10 @@ export class ProductosPageComponent implements OnInit {
     this.marcas().filter((marca) => marca.activa),
   );
 
+  protected readonly unidadesMedidaActivas = computed(() =>
+    this.unidadesMedida().filter((unidad) => unidad.activo),
+  );
+
   ngOnInit(): void {
     this.cargarProductos();
   }
@@ -109,6 +133,13 @@ export class ProductosPageComponent implements OnInit {
 
     forkJoin({
       productos: this.productosApi.listarProductos(),
+      unidadesMedida: this.productosApi.listarUnidadesMedida().pipe(
+        catchError((error: unknown) => {
+          this.catalogoEstado.set('error');
+          this.mensaje.set(this.obtenerMensajeError(error, 'No se pudieron cargar las unidades de medida.'));
+          return of<readonly UnidadMedidaResponse[]>([]);
+        }),
+      ),
       categorias: this.catalogoApi.listarCategorias().pipe(
         catchError((error: unknown) => {
           this.catalogoEstado.set('error');
@@ -124,8 +155,9 @@ export class ProductosPageComponent implements OnInit {
         }),
       ),
     }).subscribe({
-      next: ({ productos, categorias, marcas }) => {
+      next: ({ productos, unidadesMedida, categorias, marcas }) => {
         this.productos.set(productos);
+        this.unidadesMedida.set(unidadesMedida);
         this.categorias.set(categorias);
         this.marcas.set(marcas);
         this.estado.set('listo');
@@ -169,6 +201,10 @@ export class ProductosPageComponent implements OnInit {
         this.variantesPorProducto.update((variantesPorProducto) => ({
           ...variantesPorProducto,
           [producto.id]: crearVariantesState(),
+        }));
+        this.presentacionesPorProducto.update((presentacionesPorProducto) => ({
+          ...presentacionesPorProducto,
+          [producto.id]: crearPresentacionesState(),
         }));
         this.estado.set('listo');
         this.mensaje.set(`Producto ${producto.nombre} creado.`);
@@ -254,6 +290,10 @@ export class ProductosPageComponent implements OnInit {
     if (!estaExpandido && this.obtenerVariantesState(producto.id).estado === 'sin-cargar') {
       this.cargarVariantes(producto.id);
     }
+
+    if (!estaExpandido && this.obtenerPresentacionesState(producto.id).estado === 'sin-cargar') {
+      this.cargarPresentaciones(producto.id);
+    }
   }
 
   protected cargarVariantes(productoId: string): void {
@@ -274,6 +314,29 @@ export class ProductosPageComponent implements OnInit {
         this.actualizarVariantesState(productoId, {
           estado: 'error',
           mensaje: this.obtenerMensajeError(error, 'No se pudieron cargar las variantes.'),
+        });
+      },
+    });
+  }
+
+  protected cargarPresentaciones(productoId: string): void {
+    this.actualizarPresentacionesState(productoId, {
+      estado: 'cargando',
+      mensaje: '',
+    });
+
+    this.productosApi.listarPresentaciones(productoId).subscribe({
+      next: (presentaciones) => {
+        this.actualizarPresentacionesState(productoId, {
+          estado: 'listo',
+          presentaciones,
+          mensaje: '',
+        });
+      },
+      error: (error: unknown) => {
+        this.actualizarPresentacionesState(productoId, {
+          estado: 'error',
+          mensaje: this.obtenerMensajeError(error, 'No se pudieron cargar las presentaciones.'),
         });
       },
     });
@@ -319,6 +382,47 @@ export class ProductosPageComponent implements OnInit {
     });
   }
 
+  protected crearPresentacion(producto: ProductoResponse): void {
+    this.presentacionForm.markAllAsTouched();
+
+    if (this.presentacionForm.invalid) {
+      this.mensaje.set('Revisa unidad, factor y precio de la presentación antes de guardar.');
+      return;
+    }
+
+    const request = this.construirCrearPresentacionRequest();
+    this.actualizarPresentacionesState(producto.id, {
+      estado: 'guardando',
+      mensaje: '',
+    });
+
+    this.productosApi.crearPresentacion(producto.id, request).subscribe({
+      next: (presentacion) => {
+        this.actualizarPresentacionesState(producto.id, {
+          estado: 'listo',
+          presentaciones: [presentacion, ...this.obtenerPresentacionesState(producto.id).presentaciones],
+          mensaje: `Presentación ${presentacion.unidadCodigo} creada.`,
+        });
+        this.presentacionForm.reset({
+          unidadMedidaId: '',
+          factorConversion: 1,
+          esUnidadBase: false,
+          precioVenta: 0,
+          codigoBarras: '',
+        });
+        this.mensaje.set(`Presentación ${presentacion.unidadCodigo} creada.`);
+      },
+      error: (error: unknown) => {
+        const mensaje = this.obtenerMensajeError(error, 'No se pudo crear la presentación.');
+        this.actualizarPresentacionesState(producto.id, {
+          estado: 'listo',
+          mensaje,
+        });
+        this.mensaje.set(mensaje);
+      },
+    });
+  }
+
   protected activarVariante(productoId: string, varianteId: string): void {
     this.cambiarEstadoVariante(productoId, varianteId, true);
   }
@@ -331,8 +435,21 @@ export class ProductosPageComponent implements OnInit {
     return this.variantesPorProducto()[productoId] ?? crearVariantesState();
   }
 
+  protected obtenerPresentacionesState(productoId: string): PresentacionesProductoState {
+    return this.presentacionesPorProducto()[productoId] ?? crearPresentacionesState();
+  }
+
   protected estaGuardandoVariante(productoId: string): boolean {
     return this.obtenerVariantesState(productoId).estado === 'guardando';
+  }
+
+  protected estaGuardandoPresentacion(productoId: string): boolean {
+    return this.obtenerPresentacionesState(productoId).estado === 'guardando';
+  }
+
+  protected obtenerTextoUnidadMedida(unidad: UnidadMedidaResponse): string {
+    const abreviatura = unidad.abreviatura || unidad.codigo;
+    return `${abreviatura} - ${unidad.nombre}`;
   }
 
   protected obtenerNombreCategoria(categoriaId: string | null | undefined): string {
@@ -376,6 +493,18 @@ export class ProductosPageComponent implements OnInit {
       codigoSku: normalizarTextoNullable(form.codigoSku),
       codigoBarras: normalizarTextoNullable(form.codigoBarras),
       activo: true,
+    };
+  }
+
+  private construirCrearPresentacionRequest(): CrearProductoPresentacionRequest {
+    const form = this.presentacionForm.getRawValue();
+
+    return {
+      unidadMedidaId: form.unidadMedidaId,
+      factorConversion: normalizarNumero(form.factorConversion),
+      esUnidadBase: form.esUnidadBase,
+      precioVenta: normalizarNumero(form.precioVenta),
+      codigoBarras: normalizarTextoNullable(form.codigoBarras),
     };
   }
 
@@ -430,6 +559,23 @@ export class ProductosPageComponent implements OnInit {
     });
   }
 
+  private actualizarPresentacionesState(
+    productoId: string,
+    patch: Partial<PresentacionesProductoState>,
+  ): void {
+    this.presentacionesPorProducto.update((presentacionesPorProducto) => {
+      const actual = presentacionesPorProducto[productoId] ?? crearPresentacionesState();
+
+      return {
+        ...presentacionesPorProducto,
+        [productoId]: {
+          ...actual,
+          ...patch,
+        },
+      };
+    });
+  }
+
   private obtenerMensajeError(error: unknown, fallback: string): string {
     if (error instanceof HttpErrorResponse) {
       const apiMessage = this.extraerMensajeApi(error);
@@ -475,6 +621,14 @@ function crearVariantesState(): VariantesProductoState {
   return {
     estado: 'sin-cargar',
     variantes: [],
+    mensaje: '',
+  };
+}
+
+function crearPresentacionesState(): PresentacionesProductoState {
+  return {
+    estado: 'sin-cargar',
+    presentaciones: [],
     mensaje: '',
   };
 }

@@ -12,9 +12,12 @@ import {
 import { ProductosApiService } from '../../data-access/productos-api.service';
 import {
   CrearProductoRequest,
+  CrearProductoPresentacionRequest,
   CrearProductoVarianteRequest,
+  ProductoPresentacionResponse,
   ProductoResponse,
   ProductoVarianteResponse,
+  UnidadMedidaResponse,
 } from '../../models/producto.model';
 import { ProductosPageComponent } from './productos-page.component';
 
@@ -200,6 +203,74 @@ describe('ProductosPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Negro');
   });
 
+  it('loads units and product presentations when a product is expanded', () => {
+    expect(productosApi.listarUnidadesMedidaCalls).toBe(1);
+
+    component['alternarVariantes'](productosApi.productos[0]);
+    fixture.detectChanges();
+
+    expect(productosApi.ultimoListarPresentacionesProductoId).toBe('producto-1');
+    expect(fixture.nativeElement.textContent).toContain('UND · Unidad');
+    expect(fixture.nativeElement.textContent).toContain('59.90');
+  });
+
+  it('creates a product presentation', () => {
+    component['alternarVariantes'](productosApi.productos[0]);
+    component['presentacionForm'].patchValue({
+      unidadMedidaId: 'unidad-2',
+      factorConversion: 12.1234,
+      esUnidadBase: false,
+      precioVenta: 120.456,
+      codigoBarras: '775000000100',
+    });
+
+    component['crearPresentacion'](productosApi.productos[0]);
+
+    expect(productosApi.ultimoCrearPresentacionProductoId).toBe('producto-1');
+    expect(productosApi.ultimoCrearPresentacionRequest).toEqual({
+      unidadMedidaId: 'unidad-2',
+      factorConversion: 12.12,
+      esUnidadBase: false,
+      precioVenta: 120.46,
+      codigoBarras: '775000000100',
+    });
+    expect(component['obtenerPresentacionesState']('producto-1').presentaciones[0]?.unidadCodigo).toBe('CAJ');
+  });
+
+  it('does not create presentations with invalid factor or price', () => {
+    component['alternarVariantes'](productosApi.productos[0]);
+    component['presentacionForm'].patchValue({
+      unidadMedidaId: 'unidad-1',
+      factorConversion: 0,
+      precioVenta: 0,
+    });
+
+    component['crearPresentacion'](productosApi.productos[0]);
+
+    expect(productosApi.ultimoCrearPresentacionRequest).toBeNull();
+    expect(component['mensaje']()).toBe('Revisa unidad, factor y precio de la presentación antes de guardar.');
+  });
+
+  it('shows backend errors while creating presentations', () => {
+    component['alternarVariantes'](productosApi.productos[0]);
+    productosApi.crearPresentacionError = new HttpErrorResponse({
+      status: 400,
+      error: {
+        mensaje: 'Ya existe una presentacion con el mismo codigo de barras en la empresa activa.',
+      },
+    });
+    component['presentacionForm'].patchValue({
+      unidadMedidaId: 'unidad-1',
+      factorConversion: 1,
+      precioVenta: 59.9,
+      codigoBarras: '775000000001',
+    });
+
+    component['crearPresentacion'](productosApi.productos[0]);
+
+    expect(component['mensaje']()).toBe('Ya existe una presentacion con el mismo codigo de barras en la empresa activa.');
+  });
+
   it('creates a product variant', () => {
     component['alternarVariantes'](productosApi.productos[0]);
     component['varianteForm'].patchValue({
@@ -315,9 +386,14 @@ class ProductosApiServiceFake {
   ultimoListarVariantesProductoId: string | null = null;
   ultimoCrearVarianteProductoId: string | null = null;
   ultimoCrearVarianteRequest: CrearProductoVarianteRequest | null = null;
+  ultimoListarPresentacionesProductoId: string | null = null;
+  ultimoCrearPresentacionProductoId: string | null = null;
+  ultimoCrearPresentacionRequest: CrearProductoPresentacionRequest | null = null;
   ultimoActivar: { productoId: string; varianteId: string } | null = null;
   ultimoDesactivar: { productoId: string; varianteId: string } | null = null;
   crearVarianteError: HttpErrorResponse | null = null;
+  crearPresentacionError: HttpErrorResponse | null = null;
+  listarUnidadesMedidaCalls = 0;
   productos: readonly ProductoResponse[] = [
     {
       id: 'producto-1',
@@ -335,6 +411,18 @@ class ProductosApiServiceFake {
   ];
   variantes: readonly ProductoVarianteResponse[] = [
     crearVarianteResponse(),
+  ];
+  unidadesMedida: readonly UnidadMedidaResponse[] = [
+    crearUnidadMedidaResponse(),
+    crearUnidadMedidaResponse({
+      id: 'unidad-2',
+      codigo: 'CAJ',
+      nombre: 'Caja',
+      abreviatura: 'CAJ',
+    }),
+  ];
+  presentaciones: readonly ProductoPresentacionResponse[] = [
+    crearPresentacionResponse(),
   ];
 
   listarProductos() {
@@ -357,6 +445,37 @@ class ProductosApiServiceFake {
       activo: true,
       fechaCreacion: '2026-07-11T00:00:00Z',
     });
+  }
+
+  listarUnidadesMedida() {
+    this.listarUnidadesMedidaCalls += 1;
+    return of(this.unidadesMedida);
+  }
+
+  listarPresentaciones(productoId: string) {
+    this.ultimoListarPresentacionesProductoId = productoId;
+    return of(this.presentaciones);
+  }
+
+  crearPresentacion(productoId: string, request: CrearProductoPresentacionRequest) {
+    this.ultimoCrearPresentacionProductoId = productoId;
+    this.ultimoCrearPresentacionRequest = request;
+
+    if (this.crearPresentacionError) {
+      return throwError(() => this.crearPresentacionError);
+    }
+
+    return of<ProductoPresentacionResponse>(crearPresentacionResponse({
+      id: 'presentacion-2',
+      productoId,
+      unidadMedidaId: request.unidadMedidaId,
+      unidadCodigo: request.unidadMedidaId === 'unidad-2' ? 'CAJ' : 'UND',
+      unidadNombre: request.unidadMedidaId === 'unidad-2' ? 'Caja' : 'Unidad',
+      factorConversion: request.factorConversion,
+      esUnidadBase: request.esUnidadBase,
+      precioVenta: request.precioVenta,
+      codigoBarras: request.codigoBarras,
+    }));
   }
 
   listarVariantes(productoId: string) {
@@ -409,6 +528,38 @@ function crearVarianteResponse(
     codigoBarras: '775000000001',
     activo: true,
     fechaCreacion: '2026-07-15T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearUnidadMedidaResponse(overrides: Partial<UnidadMedidaResponse> = {}): UnidadMedidaResponse {
+  return {
+    id: 'unidad-1',
+    codigo: 'UND',
+    nombre: 'Unidad',
+    abreviatura: 'UND',
+    activo: true,
+    ...overrides,
+  };
+}
+
+function crearPresentacionResponse(
+  overrides: Partial<ProductoPresentacionResponse> = {},
+): ProductoPresentacionResponse {
+  return {
+    id: 'presentacion-1',
+    empresaId: 'empresa-1',
+    productoId: 'producto-1',
+    productoVarianteId: null,
+    unidadMedidaId: 'unidad-1',
+    unidadCodigo: 'UND',
+    unidadNombre: 'Unidad',
+    factorConversion: 1,
+    esUnidadBase: true,
+    precioVenta: 59.9,
+    codigoBarras: '775000000001',
+    activo: true,
+    fechaCreacion: '2026-07-21T10:00:00Z',
     ...overrides,
   };
 }

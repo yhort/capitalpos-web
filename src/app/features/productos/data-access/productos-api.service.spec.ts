@@ -2,7 +2,11 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { CrearProductoRequest, CrearProductoVarianteRequest } from '../models/producto.model';
+import {
+  CrearProductoPresentacionRequest,
+  CrearProductoRequest,
+  CrearProductoVarianteRequest,
+} from '../models/producto.model';
 import { ProductosApiService } from './productos-api.service';
 
 describe('ProductosApiService', () => {
@@ -64,6 +68,48 @@ describe('ProductosApiService', () => {
       activo: true,
       fechaCreacion: '2026-07-11T00:00:00Z',
     });
+  });
+
+  it('lists unidades de medida through capitalpos-api', () => {
+    service.listarUnidadesMedida().subscribe((unidades) => {
+      expect(unidades[0]?.codigo).toBe('UND');
+    });
+
+    const request = httpTestingController.expectOne('/api/unidades-medida');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.headers.has('X-API-KEY')).toBe(false);
+    request.flush([crearUnidadMedidaResponse()]);
+  });
+
+  it('lists product presentations through capitalpos-api', () => {
+    service.listarPresentaciones('producto-1').subscribe((presentaciones) => {
+      expect(presentaciones[0]?.unidadCodigo).toBe('UND');
+    });
+
+    const request = httpTestingController.expectOne('/api/productos/producto-1/presentaciones');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.headers.has('X-API-KEY')).toBe(false);
+    request.flush([crearPresentacionResponse()]);
+  });
+
+  it('creates product presentations through capitalpos-api', () => {
+    const presentacionRequest: CrearProductoPresentacionRequest = {
+      unidadMedidaId: 'unidad-1',
+      factorConversion: 12,
+      esUnidadBase: false,
+      precioVenta: 120,
+      codigoBarras: '775000000100',
+    };
+
+    service.crearPresentacion('producto-1', presentacionRequest).subscribe((presentacion) => {
+      expect(presentacion.factorConversion).toBe(12);
+    });
+
+    const request = httpTestingController.expectOne('/api/productos/producto-1/presentaciones');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual(presentacionRequest);
+    expect(request.request.headers.has('X-API-KEY')).toBe(false);
+    request.flush(crearPresentacionResponse({ factorConversion: 12, precioVenta: 120 }));
   });
 
   it('lists product variants through capitalpos-api', () => {
@@ -129,6 +175,36 @@ function crearVarianteResponse(overrides = {}) {
     codigoBarras: '775000000001',
     activo: true,
     fechaCreacion: '2026-07-15T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function crearUnidadMedidaResponse(overrides = {}) {
+  return {
+    id: 'unidad-1',
+    codigo: 'UND',
+    nombre: 'Unidad',
+    abreviatura: 'UND',
+    activo: true,
+    ...overrides,
+  };
+}
+
+function crearPresentacionResponse(overrides = {}) {
+  return {
+    id: 'presentacion-1',
+    empresaId: 'empresa-1',
+    productoId: 'producto-1',
+    productoVarianteId: null,
+    unidadMedidaId: 'unidad-1',
+    unidadCodigo: 'UND',
+    unidadNombre: 'Unidad',
+    factorConversion: 1,
+    esUnidadBase: true,
+    precioVenta: 59.9,
+    codigoBarras: '',
+    activo: true,
+    fechaCreacion: '2026-07-21T10:00:00Z',
     ...overrides,
   };
 }
