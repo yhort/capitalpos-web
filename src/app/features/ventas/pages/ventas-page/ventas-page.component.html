@@ -417,6 +417,10 @@
         </button>
       </div>
 
+      @if (items().length > 0 && ventaForm.controls.puntoVentaId.value && cajaEstado() !== 'abierta') {
+        <p class="sale-channel">Abre una sesión de caja para registrar ventas.</p>
+      }
+
       @if (ultimaVenta(); as venta) {
         <div class="sale-result" role="status">
           <div>

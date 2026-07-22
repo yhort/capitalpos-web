@@ -204,7 +204,10 @@ export class VentasPageComponent implements OnInit {
   );
 
   protected readonly puedeRegistrarVenta = computed(() =>
-    this.items().length > 0 && this.ventaForm.controls.puntoVentaId.valid && this.estado() !== 'guardando',
+    this.items().length > 0 &&
+    this.ventaForm.controls.puntoVentaId.valid &&
+    this.cajaEstado() === 'abierta' &&
+    this.estado() !== 'guardando',
   );
 
   ngOnInit(): void {
@@ -492,6 +495,11 @@ export class VentasPageComponent implements OnInit {
       return;
     }
 
+    if (this.cajaEstado() !== 'abierta') {
+      this.mensaje.set('Abre una sesión de caja para registrar ventas.');
+      return;
+    }
+
     const request = this.construirVentaRequest();
     const itemsVendidos = this.items();
     const productoIdsVendidos = [...new Set(itemsVendidos
@@ -519,6 +527,7 @@ export class VentasPageComponent implements OnInit {
       error: (error: unknown) => {
         this.estado.set('listo');
         this.mensaje.set(this.obtenerMensajeError(error, 'No se pudo registrar la venta.'));
+        this.consultarSesionCajaAbierta();
       },
     });
   }

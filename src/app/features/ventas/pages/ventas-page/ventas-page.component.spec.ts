@@ -36,6 +36,7 @@ describe('VentasPageComponent', () => {
     stockApi = new StockApiServiceFake();
     sedesApi = new SedesApiServiceFake();
     cajaApi = new CajaApiServiceFake();
+    cajaApi.sesionesAbiertas.set('punto-1', crearSesionCajaResponse());
 
     await TestBed.configureTestingModule({
       imports: [VentasPageComponent],
@@ -114,6 +115,8 @@ describe('VentasPageComponent', () => {
   });
 
   it('shows sin caja abierta when the cash session endpoint returns 404', async () => {
+    cajaApi.sesionesAbiertas.clear();
+
     await crearComponente();
 
     expect(cajaApi.obtenerSesionAbiertaCalls.get('punto-1')).toBe(1);
@@ -123,6 +126,7 @@ describe('VentasPageComponent', () => {
   });
 
   it('opens cash session with initial amount', async () => {
+    cajaApi.sesionesAbiertas.clear();
     await crearComponente();
 
     component['abrirCajaForm'].patchValue({
@@ -143,6 +147,7 @@ describe('VentasPageComponent', () => {
   });
 
   it('validates negative initial amount before opening cash session', async () => {
+    cajaApi.sesionesAbiertas.clear();
     await crearComponente();
 
     component['abrirCajaForm'].patchValue({
@@ -152,6 +157,51 @@ describe('VentasPageComponent', () => {
 
     expect(cajaApi.ultimaAbrirSesionRequest).toBeNull();
     expect(component['cajaMensaje']()).toBe('Indica un monto inicial válido para abrir caja.');
+  });
+
+  it('keeps register sale disabled when there is no open cash session', async () => {
+    cajaApi.sesionesAbiertas.clear();
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+    fixture.detectChanges();
+
+    const registerButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find((button) => button.textContent?.includes('Registrar venta')) as HTMLButtonElement;
+
+    expect(component['puedeRegistrarVenta']()).toBe(false);
+    expect(registerButton.disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Abre una sesión de caja para registrar ventas.');
+
+    component['registrarVenta']();
+
+    expect(posApi.ultimaVentaRequest).toBeNull();
+    expect(component['mensaje']()).toBe('Abre una sesión de caja para registrar ventas.');
+  });
+
+  it('enables sale registration after opening cash session without reloading', async () => {
+    cajaApi.sesionesAbiertas.clear();
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+
+    expect(component['puedeRegistrarVenta']()).toBe(false);
+
+    component['abrirCajaForm'].patchValue({
+      montoInicial: 50,
+    });
+    component['abrirCaja']();
+
+    expect(component['cajaEstado']()).toBe('abierta');
+    expect(component['puedeRegistrarVenta']()).toBe(true);
   });
 
   it('closes cash session with declared amount and shows closing difference', async () => {
@@ -185,6 +235,34 @@ describe('VentasPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('35.00');
   });
 
+  it('blocks sale registration again after closing cash session', async () => {
+    cajaApi.cerrarSesionResponse = crearSesionCajaResponse({
+      estado: 'Cerrada',
+      montoDeclaradoCierre: 100,
+      diferenciaCierre: 0,
+      fechaCierre: '2026-07-21T18:00:00-05:00',
+    });
+    await crearComponente();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+
+    expect(component['puedeRegistrarVenta']()).toBe(true);
+
+    component['cerrarCajaForm'].patchValue({
+      montoDeclaradoCierre: 100,
+    });
+    component['cerrarCaja']();
+    fixture.detectChanges();
+
+    expect(component['cajaEstado']()).toBe('sin-abierta');
+    expect(component['puedeRegistrarVenta']()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Abre una sesión de caja para registrar ventas.');
+  });
+
   it('validates negative declared amount before closing cash session', async () => {
     cajaApi.sesionesAbiertas.set('punto-1', crearSesionCajaResponse());
     await crearComponente();
@@ -199,6 +277,7 @@ describe('VentasPageComponent', () => {
   });
 
   it('shows backend errors while opening or closing cash session', async () => {
+    cajaApi.sesionesAbiertas.clear();
     await crearComponente();
     cajaApi.abrirSesionError = new HttpErrorResponse({
       status: 400,
@@ -223,6 +302,29 @@ describe('VentasPageComponent', () => {
 
     expect(component['cajaMensaje']()).toBe('El monto declarado no coincide con el cierre esperado.');
     expect(component['cajaEstado']()).toBe('abierta');
+  });
+
+  it('keeps cart and refreshes cash state when backend rejects sale because cash is closed', async () => {
+    await crearComponente();
+    posApi.crearVentaError = new HttpErrorResponse({
+      status: 400,
+      error: {
+        mensaje: 'No existe una sesión de caja abierta para el punto de venta.',
+      },
+    });
+    cajaApi.sesionesAbiertas.clear();
+
+    component['productoForm'].patchValue({
+      productoId: 'producto-1',
+      cantidad: 1,
+    });
+    component['agregarProducto']();
+    component['registrarVenta']();
+
+    expect(component['items']().length).toBe(1);
+    expect(component['mensaje']()).toBe('No existe una sesión de caja abierta para el punto de venta.');
+    expect(cajaApi.obtenerSesionAbiertaCalls.get('punto-1')).toBe(2);
+    expect(component['cajaEstado']()).toBe('sin-abierta');
   });
 
   it('loads puntos de venta when sede changes', async () => {
